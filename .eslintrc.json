@@ -21,6 +21,10 @@
 		"@typescript-eslint"
 	],
 	"rules": {
+		"@typescript-eslint/no-explicit-any": "off",
+		"@typescript-eslint/no-empty-function": "warn",
+		"@typescript-eslint/no-namespace": "off",
+		"no-delete-var": "off",
 		"indent": [
 			"error",
 			2
@@ -36,6 +40,7 @@
 		"semi": [
 			"error",
 			"always"
-		]
+		],
+		"no-empty": "warn"
 	}
 }
