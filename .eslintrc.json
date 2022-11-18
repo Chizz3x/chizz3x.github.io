@@ -18,7 +18,8 @@
 	},
 	"plugins": [
 		"react",
-		"@typescript-eslint"
+		"@typescript-eslint",
+		"import"
 	],
 	"rules": {
 		"@typescript-eslint/no-explicit-any": "off",
@@ -26,21 +27,56 @@
 		"@typescript-eslint/no-namespace": "off",
 		"no-delete-var": "off",
 		"indent": [
-			"error",
+			"warn",
 			2
 		],
 		"linebreak-style": [
-			"error",
-			"unix"
+			"warn",
+			"windows"
 		],
 		"quotes": [
-			"error",
+			"warn",
 			"double"
 		],
 		"semi": [
-			"error",
+			"warn",
 			"always"
 		],
-		"no-empty": "warn"
+		"no-empty": "warn",
+		"comma-style": ["warn", "last"],
+		"comma-spacing": ["warn", {
+			"before": false,
+			"after": true
+		}],
+		"no-multi-spaces": "warn",
+		"array-bracket-spacing": [
+			"warn",
+			"always", {
+				"singleValue": false
+		}],
+		"object-curly-spacing": ["warn", "always"],
+		"object-curly-newline": ["warn", {
+			"minProperties": 4,
+			"multiline": true
+		}],
+		"object-property-newline": ["warn", {
+			"allowAllPropertiesOnSameLine": false
+		}],
+		"array-bracket-newline": ["warn", {
+			"multiline": true
+		}],
+		"function-call-argument-newline": ["warn", "consistent"],
+		"react/jsx-props-no-spreading": "off",
+		"react/jsx-filename-extension": "off",
+		"import/prefer-default-export": "off",
+		"no-underscore-dangle": "off",
+		"arrow-body-style": "off",
+		"react/function-component-definition": "off",
+		"import/extensions": ["error", "ignorePackages", { "tsx": "never", "ts": "never" }],
+		"no-use-before-define": "off",
+		"no-tabs": ["error", { "allowIndentationTabs": true }],
+		"no-unused-vars": "off",
+		"react-hooks/exhaustive-deps": "off",
+		"react/prop-types": "off"
 	}
 }

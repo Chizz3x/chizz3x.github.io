@@ -1,9 +1,0 @@
-export default {
-  pos: {
-    CENTER: "CENTER",
-    MIDDLE_LEFT: "MIDDLE_LEFT",
-    MIDDLE_RIGHT: "MIDDLE_RIGHT",
-    MIDDLE_TOP: "MIDDLE_TOP",
-    MIDDLE_BOTTOM: "MIDDLE_BOTTOM",
-  }
-};

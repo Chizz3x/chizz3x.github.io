@@ -1,11 +1,14 @@
 {
 	"editor.codeActionsOnSave": {
-		"source.fixAll.eslint": true
+		"source.fixAll": true,
+		"source.fixAll.eslint": true,
+		"eslint.autoFixOnSave": true,
+		"source.fixAll.stylelint": true
 	},
 	"eslint.validate": [
-		"javascript"
+		"javascript",
+		"typescript"
 	],
-	"files.eol": "\n",
 	"cSpell.words": [
 		"defaultify"
 	]
