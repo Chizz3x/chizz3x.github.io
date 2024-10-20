@@ -72,7 +72,7 @@
 		"no-underscore-dangle": "off",
 		"arrow-body-style": "off",
 		"react/function-component-definition": "off",
-		"import/extensions": ["error", "ignorePackages", { "tsx": "never", "ts": "never" }],
+		"import/extensions": ["error", { "tsx": "never", "ts": "never" }],
 		"no-use-before-define": "off",
 		"no-tabs": ["error", { "allowIndentationTabs": true }],
 		"no-unused-vars": "off",
