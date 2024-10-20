@@ -1,4 +1,9 @@
 {
+	"ts-node": {
+    "compilerOptions": {
+      "module": "commonjs"
+    }
+  },
   "compilerOptions": {
     "target": "es5",
     "lib": [
@@ -18,7 +23,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx"
+    "jsx": "react"
   },
 	"react/jsx-filename-extension": "off",
 	"exclude": ["node_modules"],
