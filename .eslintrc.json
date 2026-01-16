@@ -6,7 +6,9 @@
 	"extends": [
 		"eslint:recommended",
 		"plugin:react/recommended",
-		"plugin:@typescript-eslint/recommended"
+		"airbnb",
+		"plugin:@typescript-eslint/recommended",
+		"plugin:prettier/recommended"
 	],
 	"parser": "@typescript-eslint/parser",
 	"parserOptions": {
@@ -21,62 +23,48 @@
 		"@typescript-eslint",
 		"import"
 	],
+	"settings": {
+		"react": {
+			"version": "detect"
+		}
+	},
 	"rules": {
-		"@typescript-eslint/no-explicit-any": "off",
-		"@typescript-eslint/no-empty-function": "warn",
-		"@typescript-eslint/no-namespace": "off",
-		"no-delete-var": "off",
-		"indent": [
-			"warn",
-			2
-		],
-		"linebreak-style": [
-			"warn",
-			"windows"
-		],
-		"quotes": [
-			"warn",
-			"double"
-		],
-		"semi": [
-			"warn",
-			"always"
-		],
-		"no-empty": "warn",
-		"comma-style": ["warn", "last"],
-		"comma-spacing": ["warn", {
-			"before": false,
-			"after": true
-		}],
-		"no-multi-spaces": "warn",
-		"array-bracket-spacing": [
-			"warn",
-			"always", {
-				"singleValue": false
-		}],
-		"object-curly-spacing": ["warn", "always"],
-		"object-curly-newline": ["warn", {
-			"minProperties": 4,
-			"multiline": true
-		}],
-		"object-property-newline": ["warn", {
-			"allowAllPropertiesOnSameLine": false
-		}],
-		"array-bracket-newline": ["warn", {
-			"multiline": true
-		}],
-		"function-call-argument-newline": ["warn", "consistent"],
+		"import/no-unresolved": "off",
+		"@typescript-eslint/no-unused-vars": "off",
+		"react/destructuring-assignment": "off",
+		"react/no-array-index-key": "off",
+		"no-restricted-syntax": "off",
+		"jsx-a11y/click-events-have-key-events": "off",
+		"jsx-a11y/no-static-element-interactions": "off",
+		"no-nested-ternary": "off",
+		"import/no-cycle": [2, { "maxDepth": 1 }],
 		"react/jsx-props-no-spreading": "off",
-		"react/jsx-filename-extension": "off",
-		"import/prefer-default-export": "off",
-		"no-underscore-dangle": "off",
-		"arrow-body-style": "off",
+		"react/jsx-filename-extension": [
+			2,
+			{ "extensions": [".js", ".jsx", ".ts", ".tsx"] }
+		],
 		"react/function-component-definition": "off",
-		"import/extensions": ["error", { "tsx": "never", "ts": "never" }],
 		"no-use-before-define": "off",
-		"no-tabs": ["error", { "allowIndentationTabs": true }],
-		"no-unused-vars": "off",
+		"@typescript-eslint/no-namespace": "off",
+		"import/extensions": "off",
+		"import/no-anonymous-default-export": "off",
+		"@typescript-eslint/no-explicit-any": "off",
+		"no-underscore-dangle": "off",
+		"import/prefer-default-export": "off",
 		"react-hooks/exhaustive-deps": "off",
-		"react/prop-types": "off"
+		"@typescript-eslint/ban-types": "warn",
+		"no-restricted-imports": "off",
+		"no-restricted-exports": "off",
+		"no-plusplus": "off",
+		"no-param-reassign": "off",
+		"@typescript-eslint/ban-ts-comment": "off",
+		"react/jsx-no-duplicate-props": "off",
+		"@typescript-eslint/no-empty-function": "off",
+		"max-classes-per-file": "off",
+		"no-useless-constructor": "off",
+		"default-case": "off",
+		"lines-between-class-members": "off",
+		"no-continue": "off",
+		"no-shadow": "off"
 	}
 }

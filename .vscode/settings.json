@@ -3,13 +3,18 @@
 		"source.fixAll": "explicit",
 		"source.fixAll.eslint": "explicit",
 		"eslint.autoFixOnSave": "explicit",
+		"source.organizeImports": "never",
 		"source.fixAll.stylelint": "explicit"
 	},
+	"files.eol": "\n",
 	"eslint.validate": [
-		"javascript",
-		"typescript"
+		"typescriptreact",
+		"typescript",
+		"javascriptreact",
+		"javascript"
 	],
 	"cSpell.words": [
+		"chizz",
 		"defaultify"
 	]
 }

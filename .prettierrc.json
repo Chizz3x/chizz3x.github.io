@@ -1,0 +1,9 @@
+{
+	"endOfLine": "auto",
+	"trailingComma": "all",
+	"bracketSpacing": true,
+	"eslintIntegration": true,
+	"printWidth": 50,
+	"useTabs": true,
+	"singleQuote": true
+}
