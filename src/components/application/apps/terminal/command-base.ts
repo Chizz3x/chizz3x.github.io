@@ -2,6 +2,7 @@ import { NTerminalApp } from '.';
 
 export abstract class CommandBase {
 	static base: string;
+	static alts: string[];
 	abstract args: NCommandBase.IArg;
 	static ARG_REGEX =
 		/--?[\w-]+(?:=(?:"[^"]*"|'[^']*'|[^\s]+))?|"(?:[^"]*)"|'(?:[^']*)'|[^\s]+/g;
@@ -21,16 +22,18 @@ export abstract class CommandBase {
 
 		// Check if any subArg matches the first token
 		const token = tokens[0];
-		for (const subArg of argDef.subArgs) {
-			if (
-				subArg.name === token ||
-				subArg.alts.includes(token)
-			) {
-				// match found, recurse with remaining tokens
-				return this.traverseArgs(
-					subArg,
-					tokens.slice(1),
-				);
+		if (argDef.subArgs) {
+			for (const subArg of argDef.subArgs) {
+				if (
+					subArg.name === token ||
+					subArg.alts?.includes(token)
+				) {
+					// match found, recurse with remaining tokens
+					return this.traverseArgs(
+						subArg,
+						tokens.slice(1),
+					);
+				}
 			}
 		}
 
@@ -51,8 +54,8 @@ export abstract class CommandBase {
 export namespace NCommandBase {
 	export interface IArg {
 		name: string;
-		alts: string[];
-		subArgs: IArg[];
+		alts?: string[];
+		subArgs?: IArg[];
 		execute: (args: string[]) => TAction | null;
 	}
 	export type TAction =

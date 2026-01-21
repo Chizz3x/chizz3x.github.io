@@ -5,9 +5,9 @@ import {
 
 export class CommandWhoAmI extends CommandBase {
 	static override base = 'whoami';
+	static override alts = ['wai'];
 	override args: NCommandBase.IArg = {
 		name: '',
-		alts: [],
 		subArgs: [
 			{
 				name: 'name',

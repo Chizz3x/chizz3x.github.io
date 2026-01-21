@@ -2,6 +2,34 @@ import { createGlobalStyle } from 'styled-components';
 import { CSSMediaSize } from './const';
 
 export default createGlobalStyle`
+	@font-face {
+		font-family: 'Consolas';
+		src: url('/fonts/consolas/consola.ttf') format('truetype');
+		font-weight: normal;
+		font-style: normal;
+	}
+
+	@font-face {
+		font-family: 'Consolas';
+		src: url('/fonts/consolas/consolab.ttf') format('truetype');
+		font-weight: bold;
+		font-style: normal;
+	}
+
+	@font-face {
+		font-family: 'Consolas';
+		src: url('/fonts/consolas/consolai.ttf') format('truetype');
+		font-weight: normal;
+		font-style: italic;
+	}
+
+	@font-face {
+		font-family: 'Consolas';
+		src: url('/fonts/consolas/consolaz.ttf') format('truetype');
+		font-weight: bold;
+		font-style: italic;
+	}
+
 	body {
 		margin: 0;
 		font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',

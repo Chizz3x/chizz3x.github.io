@@ -14,6 +14,9 @@ import {
 	NCommandBase,
 } from './command-base';
 import { CommandWhoAmI } from './commands/whoami';
+import { CommandHelp } from './commands/help';
+import buildCommand from '../../../../utils/build-command';
+import { CommandClear } from './commands/clear';
 
 export class TerminalApp extends AppItem {
 	index = 1;
@@ -26,22 +29,8 @@ export class TerminalApp extends AppItem {
 		[
 			{
 				type: 'text',
-				value: 'Welcome to my canvsole!',
-			},
-		],
-		[
-			{
-				type: 'text',
-				value: 'Call me ',
-			},
-			{
-				type: 'text',
-				value: 'Chizz3x',
-				color: 'aqua',
-			},
-			{
-				type: 'text',
-				value: ', I create things :P',
+				value:
+					'Welcome to my canvas command line!',
 			},
 		],
 		[],
@@ -52,7 +41,6 @@ export class TerminalApp extends AppItem {
 				value: 'banner.png',
 			},
 		],
-		[],
 		[
 			{
 				type: 'text',
@@ -62,14 +50,26 @@ export class TerminalApp extends AppItem {
 		[
 			{
 				type: 'text',
-				value: '> whoami - who am I?',
+				value:
+					'> whoami [wai] - Generic information about me',
 			},
 		],
 		[],
 		[],
 	];
 	commands: Map<string, CommandBase> = new Map([
-		[CommandWhoAmI.base, new CommandWhoAmI()],
+		...buildCommand(
+			CommandWhoAmI,
+			new CommandWhoAmI(),
+		),
+		...buildCommand(
+			CommandHelp,
+			new CommandHelp(),
+		),
+		...buildCommand(
+			CommandClear,
+			new CommandClear(),
+		),
 	]);
 
 	constructor(
@@ -147,9 +147,10 @@ const TerminalPage = (
 	const buffer = React.useRef<
 		NTerminalApp.TCell[][]
 	>([[]]);
-	const commandMemory = React.useRef<
-		NTerminalApp.TCell[][]
-	>([]);
+	const commandMemory = React.useRef<string[]>(
+		[],
+	);
+	const commandMemoryIndex = React.useRef(-1);
 	const virtualBufferRanges = React.useRef<
 		number[][] // [row, start, length][]
 	>([]);
@@ -297,7 +298,7 @@ const TerminalPage = (
 	) => {
 		switch (action.name) {
 			case 'clear':
-				buffer.current = [[]];
+				buffer.current = [];
 				updateVirtualBufferRanges();
 				break;
 			case 'write':
@@ -307,6 +308,24 @@ const TerminalPage = (
 		}
 	};
 
+	const noCommand = (cmd: string) => {
+		pushData([
+			[],
+			[
+				{
+					type: 'text',
+					value: `Command '${cmd}' does not exist`,
+				},
+			],
+			[
+				{
+					type: 'text',
+					value: `Use 'help' or 'h' for a list of available commands`,
+				},
+			],
+		]);
+	};
+
 	const runCommand = (command: string) => {
 		const cmdParts = command.trim().split(/\s+/);
 		const firstArg = cmdParts[0].toLowerCase();
@@ -314,9 +333,8 @@ const TerminalPage = (
 			const action = commands
 				?.get(firstArg)
 				?.execute(cmdParts.slice(1).join(' '));
-			console.log(action);
 			if (action) performAction(action);
-		}
+		} else noCommand(firstArg);
 	};
 
 	// Insert character
@@ -352,7 +370,13 @@ const TerminalPage = (
 		const cmdCells = buffer.current[
 			buffer.current.length - 1
 		].filter((f) => !f.locked);
-		commandMemory.current.push(cmdCells);
+		commandMemory.current.push(
+			cmdCells
+				.map((m) =>
+					m.type === 'char' ? m.value : '',
+				)
+				.join(''),
+		);
 		if (
 			commandMemory.current.length >
 			MAX_COMMAND_MEMORY
@@ -628,6 +652,7 @@ const TerminalPage = (
 		const ctx =
 			canvasRef.current.getContext('2d');
 		if (!ctx) return;
+		// ctx.imageSmoothingEnabled = false;
 
 		ctx.clearRect(
 			0,
@@ -845,6 +870,65 @@ const TerminalPage = (
 		}
 	};
 
+	const clearCurrentLine = (soft = true) => {
+		if (soft) {
+			buffer.current[buffer.current.length - 1] =
+				buffer.current[
+					buffer.current.length - 1
+				].filter((f) => f.locked);
+		} else {
+			buffer.current[buffer.current.length - 1] =
+				[];
+		}
+
+		updateVirtualBufferRanges();
+	};
+
+	// 1 - up; -1 - down
+	const readCommandMemory = (dir: 1 | -1) => {
+		if (commandMemory.current.length) {
+			if (dir === 1) {
+				if (commandMemoryIndex.current === -1)
+					commandMemoryIndex.current =
+						commandMemory.current.length - 1;
+				else
+					commandMemoryIndex.current = Math.max(
+						0,
+						commandMemoryIndex.current - 1,
+					);
+				clearCurrentLine();
+				pushData([
+					[
+						{
+							type: 'text',
+							value:
+								commandMemory.current[
+									commandMemoryIndex.current
+								],
+						},
+					],
+				]);
+			} else if (
+				commandMemoryIndex.current <
+				commandMemory.current.length - 1
+			) {
+				commandMemoryIndex.current++;
+				clearCurrentLine();
+				pushData([
+					[
+						{
+							type: 'text',
+							value:
+								commandMemory.current[
+									commandMemoryIndex.current
+								],
+						},
+					],
+				]);
+			}
+		}
+	};
+
 	// Keyboard input
 	React.useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
@@ -856,25 +940,28 @@ const TerminalPage = (
 				!e.ctrlKey &&
 				!e.metaKey
 			) {
+				commandMemoryIndex.current = -1;
 				insertChar(e.key);
 				e.preventDefault();
 				actionTaken = true;
 			}
 			if (e.key === 'Enter') {
+				commandMemoryIndex.current = -1;
 				if (!highlight.current) submit();
 				e.preventDefault();
 				actionTaken = true;
 			}
 			if (e.key === 'Backspace') {
+				commandMemoryIndex.current = -1;
 				backspace();
 				e.preventDefault();
 				actionTaken = true;
 			}
 			if (e.key === 'ArrowUp') {
-				// TODO: Cycle command mem previous
+				readCommandMemory(1);
 			}
 			if (e.key === 'ArrowDown') {
-				// TODO: Cycle command mem next
+				readCommandMemory(-1);
 			}
 			blinkAccRef.current = 0;
 			cursorVisible.current = true;
