@@ -1,6 +1,5 @@
 {
 	"editor.codeActionsOnSave": {
-		"source.fixAll": "explicit",
 		"source.fixAll.eslint": "explicit",
 		"eslint.autoFixOnSave": "explicit",
 		"source.organizeImports": "never",
@@ -13,8 +12,5 @@
 		"javascriptreact",
 		"javascript"
 	],
-	"cSpell.words": [
-		"chizz",
-		"defaultify"
-	]
+	"cSpell.words": ["chizz", "defaultify"]
 }

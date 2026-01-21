@@ -6,12 +6,71 @@ import {
 	NApplication,
 } from '../../application';
 import { MouseButton } from '../../../../const';
+import toIndexRanges from '../../../../utils/toIndexRanges';
+import normalizeRgba from '../../../../utils/normalize-rgba';
+import imageToPixelGrid from '../../../../utils/image-to-pixel-grid';
+import {
+	CommandBase,
+	NCommandBase,
+} from './command-base';
+import { CommandWhoAmI } from './commands/whoami';
 
 export class TerminalApp extends AppItem {
 	index = 1;
 	icon = '/logo.png';
 	title = 'Chizz3x';
 	aid = '1';
+
+	newLinePrefix = '#Chizz3x>';
+	initData: NTerminalApp.TPushData[][] = [
+		[
+			{
+				type: 'text',
+				value: 'Welcome to my canvsole!',
+			},
+		],
+		[
+			{
+				type: 'text',
+				value: 'Call me ',
+			},
+			{
+				type: 'text',
+				value: 'Chizz3x',
+				color: 'aqua',
+			},
+			{
+				type: 'text',
+				value: ', I create things :P',
+			},
+		],
+		[],
+		[],
+		[
+			{
+				type: 'image',
+				value: 'banner.png',
+			},
+		],
+		[],
+		[
+			{
+				type: 'text',
+				value: 'Basic commands to start with:',
+			},
+		],
+		[
+			{
+				type: 'text',
+				value: '> whoami - who am I?',
+			},
+		],
+		[],
+		[],
+	];
+	commands: Map<string, CommandBase> = new Map([
+		[CommandWhoAmI.base, new CommandWhoAmI()],
+	]);
 
 	constructor(
 		destroyDB: NApplication.IProps['onClose'],
@@ -28,7 +87,11 @@ export class TerminalApp extends AppItem {
 				icon={this.icon}
 				onClose={this.destroy}
 			>
-				<TerminalPage />
+				<TerminalPage
+					newLinePrefix={this.newLinePrefix}
+					initData={this.initData}
+					commands={this.commands}
+				/>
 			</Application>
 		);
 		return this.Application;
@@ -50,6 +113,8 @@ const FRAME_TIME = 1000 / FPS;
 const CURSOR_BLINK_FPS = 1;
 const CURSOR_BLINK_INTERVAL =
 	1000 / CURSOR_BLINK_FPS;
+const MAX_DELTA = 100;
+const MAX_COMMAND_MEMORY = 100;
 
 const cellSize: NTerminalApp.ICellSize = {
 	width: 8,
@@ -60,22 +125,34 @@ const maxBuffer = 1000;
 
 //! Absolute ref hellhole but trust me, it works!
 // If you know a better way to perform consistent canvas rendering without any libs, let me know ;P
-const TerminalPage = () => {
+/** Logic
+ * Terminal is rendered in canvas, because things tend to get very laggy very damn fast with bunch of html dynamic elements.
+ * cells are calculated per cell size and canvas size.
+ * Canvas size is adjusted based on parent size to prevent flickering and artifacts.
+ * Consistent 60 fps rendering with no bs.
+ * Completed lines are considered as all locked, locked cells are non deletable.
+ * Commands are executed based on custom logic, they cna do anything to the terminal, almost.
+ */
+const TerminalPage = (
+	props: NTerminalApp.IProps,
+) => {
+	const { newLinePrefix, initData, commands } =
+		props;
+
 	const canvasRef =
 		React.useRef<HTMLCanvasElement>(null);
+
+	const init = React.useRef<boolean>(false);
+
 	const buffer = React.useRef<
 		NTerminalApp.TCell[][]
 	>([[]]);
-	React.useEffect(() => {
-		buffer.current = Array.from({
-			length: 100,
-		}).map((_, i) =>
-			i
-				.toString()
-				.split('')
-				.map((m) => ({ type: 'char', value: m })),
-		);
-	}, []);
+	const commandMemory = React.useRef<
+		NTerminalApp.TCell[][]
+	>([]);
+	const virtualBufferRanges = React.useRef<
+		number[][] // [row, start, length][]
+	>([]);
 
 	const rafRef = React.useRef<number>();
 	const lastTimeRef = React.useRef<number>(0);
@@ -90,12 +167,7 @@ const TerminalPage = () => {
 			cols: 0,
 			rows: 0,
 		});
-	const scrollRow = React.useRef(0);
-	const cursor =
-		React.useRef<NTerminalApp.TCursor>({
-			row: 0,
-			col: 0,
-		});
+	const scrollOffset = React.useRef(0);
 	// Highlights
 	const highlight = React.useRef<{
 		start: NTerminalApp.TCursor;
@@ -108,7 +180,146 @@ const TerminalPage = () => {
 	const blinkAccRef = React.useRef(0);
 	const cursorVisible = React.useRef(true);
 
-	// Insert character and wrap if necessary
+	/**
+	 * First row data is always appended to last existing row, others are new lines
+	 */
+	const pushData = async (
+		data: NTerminalApp.TPushData[][],
+	) => {
+		for (let i = 0; i < data.length; i++) {
+			const row = data[i];
+			const bufferData: NTerminalApp.TCell[] = [];
+			for (const part of row) {
+				if (part.type === 'text') {
+					bufferData.push(
+						...part.value.split('').map(
+							(m) =>
+								({
+									type: 'char',
+									value: m,
+									color: part.color,
+									backgroundColor:
+										part.backgroundColor,
+									locked: part.locked,
+								}) as NTerminalApp.TCell,
+						),
+					);
+				} else if (part.type === 'pixels') {
+					bufferData.push({
+						...part,
+						// Apparently a better way performance wise to pre-create pixels and draw them over canvas parts.
+						// Way damn faster though 500x500 starts lagging
+						value: await createImageBitmap(
+							new ImageData(
+								normalizeRgba(
+									part.value,
+									cellSize.width,
+									cellSize.height,
+								),
+								cellSize.width,
+								cellSize.height,
+							),
+						),
+					});
+				} else if (part.type === 'image') {
+					const cells = await imageToPixelGrid(
+						part.value,
+						cellSize.width,
+						cellSize.height,
+					);
+					for (let r = 0; r < cells.rows; r++) {
+						if (r === 0) {
+							for (
+								let c = 0;
+								c < cells.cols;
+								c++
+							) {
+								buffer.current[
+									buffer.current.length - 1
+								].push({
+									type: 'pixels',
+									value: await createImageBitmap(
+										new ImageData(
+											normalizeRgba(
+												cells.chunks[
+													r * cells.cols + c
+												],
+												cellSize.width,
+												cellSize.height,
+											),
+											cellSize.width,
+											cellSize.height,
+										),
+									),
+								});
+							}
+						} else {
+							buffer.current.push(
+								await Promise.all(
+									cells.chunks
+										.slice(
+											r * cells.cols,
+											(r + 1) * cells.cols,
+										)
+										.map(async (m) => ({
+											type: 'pixels',
+											value:
+												await createImageBitmap(
+													new ImageData(
+														normalizeRgba(
+															m,
+															cellSize.width,
+															cellSize.height,
+														),
+														cellSize.width,
+														cellSize.height,
+													),
+												),
+										})),
+								),
+							);
+						}
+					}
+				}
+			}
+			if (i === 0)
+				buffer.current[
+					buffer.current.length - 1
+				].push(...bufferData);
+			else buffer.current.push(bufferData);
+		}
+
+		updateVirtualBufferRanges();
+	};
+
+	const performAction = (
+		action: NCommandBase.TAction,
+	) => {
+		switch (action.name) {
+			case 'clear':
+				buffer.current = [[]];
+				updateVirtualBufferRanges();
+				break;
+			case 'write':
+				pushData(action.data);
+				updateVirtualBufferRanges();
+				break;
+		}
+	};
+
+	const runCommand = (command: string) => {
+		const cmdParts = command.trim().split(/\s+/);
+		const firstArg = cmdParts[0].toLowerCase();
+		if (commands?.has(firstArg)) {
+			const action = commands
+				?.get(firstArg)
+				?.execute(cmdParts.slice(1).join(' '));
+			console.log(action);
+			if (action) performAction(action);
+		}
+	};
+
+	// Insert character
 	const insertChar = (
 		ch: string,
 		locked = false,
@@ -116,9 +327,6 @@ const TerminalPage = () => {
 		const row =
 			buffer.current[buffer.current.length - 1];
 		if (row.length >= maxRow) return;
-		const cell = row[cursor.current.col];
-		if (cell?.type === 'char' && cell?.locked)
-			return;
 
 		row.push({
 			type: 'char',
@@ -133,17 +341,36 @@ const TerminalPage = () => {
 			buffer.current[buffer.current.length - 1];
 		const cell = row[row.length - 1];
 		if (!cell) return;
-		if (cell.type === 'char' && !cell.locked) {
+		if (!cell.locked) {
 			buffer.current[
 				buffer.current.length - 1
 			].pop();
 		}
 	};
 
-	const newLine = () => {
+	const submit = () => {
+		const cmdCells = buffer.current[
+			buffer.current.length - 1
+		].filter((f) => !f.locked);
+		commandMemory.current.push(cmdCells);
+		if (
+			commandMemory.current.length >
+			MAX_COMMAND_MEMORY
+		)
+			commandMemory.current.shift();
+
+		runCommand(
+			cmdCells
+				.map((m) => m.value)
+				.join('')
+				.trim(),
+		);
+
 		buffer.current.push([]);
 		if (buffer.current.length > maxBuffer)
 			buffer.current.shift();
+
+		newLinePrep();
 	};
 
 	// Mouse highlight helpers
@@ -160,7 +387,7 @@ const TerminalPage = () => {
 				(e.clientY - rect.top) / cellSize.height,
 			);
 			return {
-				row: row + scrollRow.current,
+				row: row + scrollOffset.current,
 				col,
 			};
 		}
@@ -214,35 +441,186 @@ const TerminalPage = () => {
 		highlightStartRef.current = null;
 	};
 
-	const onWheel = (e: React.WheelEvent) => {
-		scrollRow.current = Math.max(
+	const adjustScrollPosition = (delta = 0) => {
+		const maxScroll = Math.max(
+			0,
+			virtualBufferRanges.current.length -
+				Math.round(gridSize.current.rows / 2),
+		);
+
+		scrollOffset.current = Math.max(
 			0,
 			Math.min(
-				buffer.current.length +
-					Math.floor(gridSize.current.rows / 2) -
-					gridSize.current.rows,
-				scrollRow.current +
-					(e.deltaY > 0 ? 1 : -1),
+				maxScroll,
+				scrollOffset.current +
+					(delta > 0 ? 1 : delta < 0 ? -1 : 0),
 			),
 		);
 	};
 
+	const onWheel = (e: React.WheelEvent) => {
+		adjustScrollPosition(e.deltaY);
+	};
+
 	const getCursorPosition = () => {
-		// Complicated, but comfortable. Now cursor always stays where text can be typed.
-		// TODO: Take into account scrolling, will reduce computation time.
 		return {
-			row: buffer.current.reduce(
-				(p, c) =>
-					p +
-					Math.floor(
-						c.length / gridSize.current.cols,
-					),
+			bufferRow: Math.max(
+				0,
 				buffer.current.length - 1,
 			),
-			col:
+			bufferCol:
 				buffer.current[buffer.current.length - 1]
-					.length % gridSize.current.cols,
+					?.length || 0,
 		};
+	};
+
+	const findVirtualCursor = () => {
+		const { bufferRow, bufferCol } =
+			getCursorPosition();
+		const { cols } = gridSize.current;
+
+		for (
+			let i = 0;
+			i < virtualBufferRanges.current.length;
+			i++
+		) {
+			const [br, start, len] =
+				virtualBufferRanges.current[i];
+
+			if (br !== bufferRow) continue;
+
+			if (
+				bufferCol >= start &&
+				bufferCol < start + len
+			) {
+				return {
+					virtualRow: i,
+					virtualCol: bufferCol - start,
+				};
+			}
+
+			if (bufferCol === start + len) {
+				if (len < cols) {
+					return {
+						virtualRow: i,
+						virtualCol: len,
+					};
+				}
+
+				const next =
+					virtualBufferRanges.current[i + 1];
+				if (next && next[0] === bufferRow) {
+					return {
+						virtualRow: i + 1,
+						virtualCol: 0,
+					};
+				}
+
+				return {
+					virtualRow: i + 1,
+					virtualCol: 0,
+				};
+			}
+		}
+
+		return {
+			virtualRow:
+				virtualBufferRanges.current.length - 1,
+			virtualCol: 0,
+		};
+	};
+
+	const updateVirtualBufferRanges = () => {
+		virtualBufferRanges.current = [];
+
+		const { cols } = gridSize.current;
+		if (cols <= 0) return;
+
+		if (buffer.current.length === 0) {
+			virtualBufferRanges.current.push([0, 0, 0]);
+			return;
+		}
+
+		for (
+			let br = 0;
+			br < buffer.current.length;
+			br++
+		) {
+			const row = buffer.current[br];
+
+			if (!row || row.length === 0) {
+				virtualBufferRanges.current.push([
+					br,
+					0,
+					0,
+				]);
+				continue;
+			}
+
+			const ranges = toIndexRanges(
+				row.length,
+				cols,
+			);
+
+			for (let i = 0; i < ranges.length; i++) {
+				const [start, length] = ranges[i];
+				virtualBufferRanges.current.push([
+					br,
+					start,
+					length,
+				]);
+			}
+		}
+	};
+
+	const getHighlightedText = () => {
+		if (!highlight.current) return '';
+
+		const a = highlight.current.start;
+		const b = highlight.current.end;
+
+		const startVR = Math.min(a.row, b.row);
+		const endVR = Math.max(a.row, b.row);
+
+		const lines: string[] = [];
+
+		for (let vr = startVR; vr <= endVR; vr++) {
+			const range =
+				virtualBufferRanges.current[vr];
+			if (!range) {
+				lines.push('');
+				continue;
+			}
+
+			const [bufferRow, startIdx, len] = range;
+			const row = buffer.current[bufferRow] || [];
+
+			let from = 0;
+			let to = len;
+
+			if (vr === a.row) from = a.col - startIdx;
+			if (vr === b.row) to = b.col - startIdx + 1;
+
+			// clamp to real buffer
+			from = Math.max(
+				0,
+				Math.min(from, row.length),
+			);
+			to = Math.max(
+				from,
+				Math.min(to, row.length),
+			);
+
+			const text = row
+				.slice(from, to)
+				.map((c) =>
+					c.type === 'char' ? c.value : ' ',
+				)
+				.join('');
+			lines.push(text);
+		}
+
+		return lines.join('\n');
 	};
 
 	const renderCanvas = () => {
@@ -250,8 +628,6 @@ const TerminalPage = () => {
 		const ctx =
 			canvasRef.current.getContext('2d');
 		if (!ctx) return;
-
-		cursor.current = getCursorPosition();
 
 		ctx.clearRect(
 			0,
@@ -263,32 +639,74 @@ const TerminalPage = () => {
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
 
-		let readPos = {
-			row: scrollRow.current,
-			col: 0,
-		};
+		if (
+			buffer.current.length &&
+			!virtualBufferRanges.current.length
+		) {
+			updateVirtualBufferRanges();
+		}
 
-		// Draw text and what not
+		const virtualCursor = findVirtualCursor();
+
+		const first = scrollOffset.current;
+		const last = first + gridSize.current.rows;
+
+		const visibleRanges =
+			virtualBufferRanges.current.slice(
+				first,
+				last,
+			);
+
+		// Draw highlight
+		if (highlight.current) {
+			const a = highlight.current.start;
+			const b = highlight.current.end;
+
+			const startVR = Math.min(a.row, b.row);
+			const endVR = Math.max(a.row, b.row);
+
+			ctx.fillStyle = 'rgba(0,0,255,0.5)';
+
+			for (let vr = startVR; vr <= endVR; vr++) {
+				const screenRow =
+					vr - scrollOffset.current;
+				if (
+					screenRow < 0 ||
+					screenRow >= gridSize.current.rows
+				)
+					continue;
+
+				let startCol = 0;
+				let endCol = gridSize.current.cols - 1;
+
+				if (vr === a.row) startCol = a.col;
+				if (vr === b.row) endCol = b.col;
+
+				ctx.fillRect(
+					startCol * cellSize.width,
+					screenRow * cellSize.height,
+					(endCol - startCol + 1) *
+						cellSize.width,
+					cellSize.height,
+				);
+			}
+		}
+
 		for (
 			let r = 0;
-			r < gridSize.current.rows;
+			r < visibleRanges.length;
 			r++
 		) {
-			const row = buffer.current[readPos.row];
+			const [bufferRow, startCol, length] =
+				visibleRanges[r];
+
+			const row = buffer.current[bufferRow];
 			if (!row) continue;
-			for (
-				let c = 0;
-				c < gridSize.current.cols;
-				c++
-			) {
-				const cell = row[readPos.col];
-				if (!cell) {
-					readPos = {
-						row: readPos.row + 1,
-						col: 0,
-					};
-					break;
-				}
+
+			for (let c = 0; c < length; c++) {
+				const cell = row[startCol + c];
+				if (!cell) continue;
+
 				if (cell.type === 'char') {
 					const x =
 						c * cellSize.width +
@@ -296,69 +714,57 @@ const TerminalPage = () => {
 					const y =
 						r * cellSize.height +
 						cellSize.height / 2;
-					ctx.fillStyle = cell.color || '#fff';
-					ctx.fillText(cell.value, x, y);
 
-					readPos = {
-						row: readPos.row,
-						col: readPos.col + 1,
-					};
+					if (cell.backgroundColor) {
+						ctx.fillStyle =
+							cell.backgroundColor || '#000';
+						ctx.fillRect(
+							c * cellSize.width,
+							r * cellSize.height,
+							cellSize.width,
+							cellSize.height,
+						);
+					}
+					if (cell.color === 'inverse') {
+						ctx.globalCompositeOperation =
+							'difference';
+						ctx.fillStyle = '#fff';
+						ctx.fillText(cell.value, x, y);
+						ctx.globalCompositeOperation =
+							'source-over';
+					} else {
+						ctx.fillStyle = cell.color || '#fff';
+						ctx.fillText(cell.value, x, y);
+					}
+				} else if (cell.type === 'pixels') {
+					ctx.globalCompositeOperation =
+						'lighter';
+					ctx.drawImage(
+						cell.value,
+						c * cellSize.width,
+						r * cellSize.height,
+					);
+					ctx.globalCompositeOperation =
+						'source-over';
 				}
-				if (cell.type === 'pixels') {
-					// TODO: Draw individual pixels in a call for images usually.
-				}
-			}
-		}
-
-		// Draw highlight
-		if (highlight.current) {
-			ctx.fillStyle = 'rgba(0,0,255,0.3)';
-			const startRow =
-				highlight.current.start.row;
-			const startCol =
-				highlight.current.start.col;
-			const endRow = highlight.current.end.row;
-			const endCol = highlight.current.end.col;
-			for (
-				let r = Math.min(startRow, endRow);
-				r <= Math.max(startRow, endRow);
-				r++
-			) {
-				const rowStart =
-					r === startRow ? startCol : 0;
-				const rowEnd =
-					r === endRow
-						? endCol
-						: gridSize.current.cols - 1;
-				const visR = r - scrollRow.current;
-				if (
-					visR < 0 ||
-					visR >= gridSize.current.rows
-				)
-					continue;
-				ctx.fillRect(
-					rowStart * cellSize.width,
-					visR * cellSize.height,
-					(rowEnd - rowStart + 1) *
-						cellSize.width,
-					cellSize.height,
-				);
 			}
 		}
 
 		// Draw cursor
-		if (cursorVisible.current) {
-			const visRow =
-				cursor.current.row - scrollRow.current;
+		if (virtualCursor && cursorVisible.current) {
+			const screenRow =
+				virtualCursor.virtualRow -
+				scrollOffset.current;
+
 			if (
-				visRow >= 0 &&
-				visRow < gridSize.current.rows &&
-				cursor.current.col < gridSize.current.cols
+				screenRow >= 0 &&
+				screenRow < gridSize.current.rows
 			) {
 				ctx.strokeStyle = '#f00';
 				ctx.strokeRect(
-					cursor.current.col * cellSize.width,
-					visRow * cellSize.height,
+					virtualCursor.virtualCol *
+						cellSize.width,
+					screenRow * cellSize.height,
 					cellSize.width,
 					cellSize.height,
 				);
@@ -369,9 +775,15 @@ const TerminalPage = () => {
 	// Performs canvas resize based on parent if needed
 	const applyResizeIfNeeded = () => {
 		const resize = pendingResizeRef.current;
+		pendingResizeRef.current = null;
 		const parent =
 			canvasRef.current?.parentElement;
 		if (!resize || !canvasRef.current || !parent)
+			return;
+		if (
+			canvasRef.current.width === resize.w &&
+			canvasRef.current.height === resize.h
+		)
 			return;
 
 		canvasRef.current.width = resize.w;
@@ -380,19 +792,65 @@ const TerminalPage = () => {
 		canvasRef.current.style.width = `${parent.clientWidth}px`;
 		canvasRef.current.style.height = `${parent.clientHeight}px`;
 
-		gridSize.current = {
+		const newGridSize = {
 			cols: Math.floor(resize.w / cellSize.width),
 			rows: Math.floor(
 				resize.h / cellSize.height,
 			),
 		};
 
-		pendingResizeRef.current = null;
+		if (
+			newGridSize.cols !== gridSize.current.cols
+		)
+			removeHighlight();
+
+		adjustScrollPosition();
+
+		gridSize.current = newGridSize;
+	};
+
+	const onUpdate = (delta: number) => {
+		blinkAccRef.current += delta;
+		while (
+			blinkAccRef.current >= CURSOR_BLINK_INTERVAL
+		) {
+			blinkAccRef.current -=
+				CURSOR_BLINK_INTERVAL;
+			cursorVisible.current =
+				!cursorVisible.current;
+		}
+
+		applyResizeIfNeeded();
+		renderCanvas();
+	};
+
+	const newLinePrep = async () => {
+		if (newLinePrefix) {
+			await pushData([
+				[
+					{
+						type: 'text',
+						value: newLinePrefix,
+						locked: true,
+						color: 'aqua',
+					},
+				],
+			]);
+		}
+	};
+
+	const pushInitData = async () => {
+		if (initData) {
+			await pushData(initData);
+		}
 	};
 
 	// Keyboard input
 	React.useEffect(() => {
 		const onKeyDown = (e: KeyboardEvent) => {
+			if (!init.current) return;
+
+			let actionTaken = false;
 			if (
 				e.key.length === 1 &&
 				!e.ctrlKey &&
@@ -400,18 +858,38 @@ const TerminalPage = () => {
 			) {
 				insertChar(e.key);
 				e.preventDefault();
+				actionTaken = true;
 			}
 			if (e.key === 'Enter') {
-				if (!highlight.current) newLine();
+				if (!highlight.current) submit();
 				e.preventDefault();
+				actionTaken = true;
 			}
 			if (e.key === 'Backspace') {
 				backspace();
 				e.preventDefault();
+				actionTaken = true;
+			}
+			if (e.key === 'ArrowUp') {
+				// TODO: Cycle command mem previous
+			}
+			if (e.key === 'ArrowDown') {
+				// TODO: Cycle command mem next
 			}
 			blinkAccRef.current = 0;
 			cursorVisible.current = true;
-			removeHighlight();
+			if (e.ctrlKey) {
+				if (e.key?.toLowerCase() === 'c') {
+					const text = getHighlightedText();
+					navigator.clipboard.writeText(text);
+					removeHighlight();
+				}
+			} else {
+				removeHighlight();
+			}
+			if (actionTaken) {
+				updateVirtualBufferRanges();
+			}
 		};
 		window.addEventListener('keydown', onKeyDown);
 		return () => {
@@ -428,32 +906,30 @@ const TerminalPage = () => {
 			canvasRef.current?.parentElement;
 		if (!parent) return () => {};
 
-		const observer = new ResizeObserver(() => {
-			pendingResizeRef.current = {
-				w: parent.clientWidth,
-				h: parent.clientHeight,
-			};
-		});
+		// Observer parent size to resize the canvas
+		const parentObserver = new ResizeObserver(
+			() => {
+				pendingResizeRef.current = {
+					w: parent.clientWidth,
+					h: parent.clientHeight,
+				};
+			},
+		);
+		parentObserver.observe(parent);
 
-		observer.observe(parent);
+		// Observer canvas size to apply specific actions
+		const canvasObserver = new ResizeObserver(
+			() => {
+				updateVirtualBufferRanges();
+			},
+		);
+		canvasObserver.observe(canvasRef.current);
 
-		return () => observer.disconnect();
+		return () => {
+			parentObserver.disconnect();
+			canvasObserver.disconnect();
+		};
 	}, []);
-
-	const onUpdate = (delta: number) => {
-		blinkAccRef.current += delta;
-		if (
-			blinkAccRef.current >= CURSOR_BLINK_INTERVAL
-		) {
-			blinkAccRef.current -=
-				CURSOR_BLINK_INTERVAL;
-			cursorVisible.current =
-				!cursorVisible.current;
-		}
-
-		applyResizeIfNeeded();
-		renderCanvas();
-	};
 
 	// Main renderer
 	React.useEffect(() => {
@@ -461,11 +937,12 @@ const TerminalPage = () => {
 			if (!lastTimeRef.current)
 				lastTimeRef.current = time;
 
-			const delta = time - lastTimeRef.current;
+			let delta = time - lastTimeRef.current;
 			lastTimeRef.current = time;
+			delta = Math.min(delta, MAX_DELTA);
 			accRef.current += delta;
 
-			if (accRef.current >= FRAME_TIME) {
+			while (accRef.current >= FRAME_TIME) {
 				accRef.current -= FRAME_TIME;
 				onUpdate(FRAME_TIME);
 			}
@@ -480,6 +957,18 @@ const TerminalPage = () => {
 			if (rafRef.current)
 				cancelAnimationFrame(rafRef.current);
 		};
+	}, []);
+
+	const doInit = async () => {
+		await pushInitData();
+		await newLinePrep();
+	};
+
+	React.useEffect(() => {
+		if (!init.current) {
+			init.current = true;
+			doInit();
+		}
 	}, []);
 
 	return (
@@ -498,6 +987,12 @@ const TerminalPage = () => {
 };
 
 export namespace NTerminalApp {
+	export interface IProps {
+		newLinePrefix?: string;
+		initData?: TPushData[][];
+		commands?: Map<string, CommandBase>;
+	}
+
 	export interface IGridSize {
 		cols: number;
 		rows: number;
@@ -511,13 +1006,40 @@ export namespace NTerminalApp {
 				type: 'char';
 				value: string;
 				color?: string;
+				backgroundColor?: string;
 				locked?: boolean;
 		  }
-		| { type: 'pixels'; pixels: number[][][] };
+		| {
+				type: 'pixels';
+				value: ImageBitmap;
+				backgroundColor?: string;
+				locked?: boolean;
+		  };
 	export type TCursor = {
 		row: number;
 		col: number;
 	};
+
+	export type TPushData =
+		| {
+				type: 'text';
+				value: string;
+				color?: string;
+				backgroundColor?: string;
+				locked?: boolean;
+		  }
+		| {
+				type: 'pixels';
+				value: number[];
+				backgroundColor?: string;
+				locked?: boolean;
+		  }
+		| {
+				type: 'image';
+				value: string;
+				backgroundColor?: string;
+				locked?: boolean;
+		  };
 }
 
 const TerminalPageStyle = styled.div`

@@ -65,6 +65,8 @@
 		"default-case": "off",
 		"lines-between-class-members": "off",
 		"no-continue": "off",
-		"no-shadow": "off"
+		"no-shadow": "off",
+		"no-await-in-loop": "off",
+		"class-methods-use-this": "off"
 	}
 }
