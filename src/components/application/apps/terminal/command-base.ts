@@ -14,13 +14,12 @@ export abstract class CommandBase {
 	static traverseArgs(
 		argDef: NCommandBase.IArg,
 		tokens: string[],
+		context: NCommandBase.IExecuteProps,
 	): NCommandBase.TAction | null {
 		if (tokens.length === 0) {
-			// No tokens left, call execute at current node
-			return argDef.execute(tokens);
+			return argDef.execute(tokens, context);
 		}
 
-		// Check if any subArg matches the first token
 		const token = tokens[0];
 		if (argDef.subArgs) {
 			for (const subArg of argDef.subArgs) {
@@ -28,35 +27,39 @@ export abstract class CommandBase {
 					subArg.name === token ||
 					subArg.alts?.includes(token)
 				) {
-					// match found, recurse with remaining tokens
 					return this.traverseArgs(
 						subArg,
 						tokens.slice(1),
+						context,
 					);
 				}
 			}
 		}
 
-		// No matching subArg: current node is the leaf
-		return argDef.execute(tokens);
+		return argDef.execute(tokens, context);
 	}
 
-	execute(argStr: string) {
-		const tokens =
-			CommandBase.parseArgStr(argStr);
+	execute(props: NCommandBase.IExecuteProps) {
+		const tokens = CommandBase.parseArgStr(
+			props.argStr,
+		);
 		return CommandBase.traverseArgs(
 			this.args,
 			tokens,
+			props,
 		);
 	}
 }
 
 export namespace NCommandBase {
 	export interface IArg {
-		name: string;
+		name?: string;
 		alts?: string[];
 		subArgs?: IArg[];
-		execute: (args: string[]) => TAction | null;
+		execute: (
+			args: string[],
+			context: IExecuteProps,
+		) => TAction | null;
 	}
 	export type TAction =
 		| {
@@ -66,4 +69,9 @@ export namespace NCommandBase {
 				name: 'write';
 				data: NTerminalApp.TPushData[][];
 		  };
+
+	export interface IExecuteProps {
+		argStr: string;
+		buffer: NTerminalApp.TCell[][];
+	}
 }

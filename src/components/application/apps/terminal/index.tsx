@@ -17,6 +17,7 @@ import { CommandWhoAmI } from './commands/whoami';
 import { CommandHelp } from './commands/help';
 import buildCommand from '../../../../utils/build-command';
 import { CommandClear } from './commands/clear';
+import buildProgressCell from '../../../../utils/build-progress-cell';
 
 export class TerminalApp extends AppItem {
 	index = 1;
@@ -34,7 +35,6 @@ export class TerminalApp extends AppItem {
 			},
 		],
 		[],
-		[],
 		[
 			{
 				type: 'image',
@@ -51,10 +51,16 @@ export class TerminalApp extends AppItem {
 			{
 				type: 'text',
 				value:
+					'> help [h] - Get some help, will ya?',
+			},
+		],
+		[
+			{
+				type: 'text',
+				value:
 					'> whoami [wai] - Generic information about me',
 			},
 		],
-		[],
 		[],
 	];
 	commands: Map<string, CommandBase> = new Map([
@@ -146,7 +152,7 @@ const TerminalPage = (
 
 	const buffer = React.useRef<
 		NTerminalApp.TCell[][]
-	>([[]]);
+	>([]);
 	const commandMemory = React.useRef<string[]>(
 		[],
 	);
@@ -186,6 +192,7 @@ const TerminalPage = (
 	 */
 	const pushData = async (
 		data: NTerminalApp.TPushData[][],
+		inline = false,
 	) => {
 		for (let i = 0; i < data.length; i++) {
 			const row = data[i];
@@ -229,7 +236,7 @@ const TerminalPage = (
 						cellSize.height,
 					);
 					for (let r = 0; r < cells.rows; r++) {
-						if (r === 0) {
+						if (inline && r === 0) {
 							for (
 								let c = 0;
 								c < cells.cols;
@@ -252,6 +259,7 @@ const TerminalPage = (
 											cellSize.height,
 										),
 									),
+									locked: part.locked,
 								});
 							}
 						} else {
@@ -276,14 +284,75 @@ const TerminalPage = (
 														cellSize.height,
 													),
 												),
+											locked: part.locked,
 										})),
 								),
 							);
 						}
 					}
+				} else if (part.type === 'progress') {
+					for (let i = 0; i < part.length; i++) {
+						let char: string | undefined;
+
+						if (part.text) {
+							switch (part.textAlign) {
+								case 'middle':
+									// [...text...]
+									char =
+										part.text[
+											i -
+												Math.floor(
+													part.length / 2,
+												) +
+												Math.floor(
+													part.text.length / 2,
+												)
+										];
+									break;
+								case 'right':
+									// [......text]
+									char =
+										part.text[
+											i -
+												part.length +
+												part.text.length
+										];
+									break;
+								case 'left':
+								default:
+									// [text......]
+									char = part.text[i];
+									break;
+							}
+						}
+
+						bufferData.push({
+							type: 'pixels',
+							value: await createImageBitmap(
+								new ImageData(
+									buildProgressCell({
+										length: part.length,
+										value: part.value,
+										cellIndex: i,
+										width: cellSize.width,
+										height: cellSize.height,
+										color: part.color,
+										backgroundColor:
+											part.backgroundColor,
+										border: 'all',
+									}),
+									cellSize.width,
+									cellSize.height,
+								),
+							),
+							locked: part.locked,
+							char,
+							charColor: part.textColor,
+						});
+					}
 				}
 			}
-			if (i === 0)
+			if (inline && i === 0)
 				buffer.current[
 					buffer.current.length - 1
 				].push(...bufferData);
@@ -293,7 +362,24 @@ const TerminalPage = (
 		updateVirtualBufferRanges();
 	};
 
-	const performAction = (
+	const autoTypeAndSubmit = async (
+		text: string,
+	) => {
+		await pushData(
+			[
+				[
+					{
+						type: 'text',
+						value: text,
+					},
+				],
+			],
+			true,
+		);
+		await submit();
+	};
+
+	const performAction = async (
 		action: NCommandBase.TAction,
 	) => {
 		switch (action.name) {
@@ -302,15 +388,14 @@ const TerminalPage = (
 				updateVirtualBufferRanges();
 				break;
 			case 'write':
-				pushData(action.data);
+				await pushData(action.data);
 				updateVirtualBufferRanges();
 				break;
 		}
 	};
 
-	const noCommand = (cmd: string) => {
-		pushData([
-			[],
+	const noCommand = async (cmd: string) => {
+		await pushData([
 			[
 				{
 					type: 'text',
@@ -326,15 +411,38 @@ const TerminalPage = (
 		]);
 	};
 
-	const runCommand = (command: string) => {
+	const runCommand = async (command: string) => {
 		const cmdParts = command.trim().split(/\s+/);
 		const firstArg = cmdParts[0].toLowerCase();
 		if (commands?.has(firstArg)) {
 			const action = commands
 				?.get(firstArg)
-				?.execute(cmdParts.slice(1).join(' '));
-			if (action) performAction(action);
-		} else noCommand(firstArg);
+				?.execute({
+					argStr: cmdParts.slice(1).join(' '),
+					buffer: buffer.current,
+				});
+			if (action) await performAction(action);
+		} else await noCommand(firstArg);
+	};
+
+	const scrollIntoCursorView = () => {
+		const cursorPosition = getCursorPosition();
+		const isCursorBefore =
+			cursorPosition.bufferRow <
+			scrollOffset.current;
+		const isCursorAfter =
+			cursorPosition.bufferRow >=
+			scrollOffset.current +
+				gridSize.current.rows;
+		if (isCursorAfter) {
+			scrollTo(
+				cursorPosition.bufferRow -
+					gridSize.current.rows +
+					1,
+			);
+		} else if (isCursorBefore) {
+			scrollTo(cursorPosition.bufferRow);
+		}
 	};
 
 	// Insert character
@@ -351,6 +459,8 @@ const TerminalPage = (
 			value: ch,
 			locked,
 		});
+
+		scrollIntoCursorView();
 	};
 
 	// Backspace with permanent check
@@ -364,9 +474,10 @@ const TerminalPage = (
 				buffer.current.length - 1
 			].pop();
 		}
+		scrollIntoCursorView();
 	};
 
-	const submit = () => {
+	const submit = async () => {
 		const cmdCells = buffer.current[
 			buffer.current.length - 1
 		].filter((f) => !f.locked);
@@ -383,18 +494,22 @@ const TerminalPage = (
 		)
 			commandMemory.current.shift();
 
-		runCommand(
+		await runCommand(
 			cmdCells
 				.map((m) => m.value)
 				.join('')
 				.trim(),
 		);
 
+		const doNewLine = !!buffer.current.length;
+
 		buffer.current.push([]);
 		if (buffer.current.length > maxBuffer)
 			buffer.current.shift();
 
-		newLinePrep();
+		newLinePrep(doNewLine);
+
+		scrollIntoCursorView();
 	};
 
 	// Mouse highlight helpers
@@ -465,7 +580,7 @@ const TerminalPage = (
 		highlightStartRef.current = null;
 	};
 
-	const adjustScrollPosition = (delta = 0) => {
+	const scrollBy = (delta = 0, cells = 0) => {
 		const maxScroll = Math.max(
 			0,
 			virtualBufferRanges.current.length -
@@ -477,13 +592,27 @@ const TerminalPage = (
 			Math.min(
 				maxScroll,
 				scrollOffset.current +
-					(delta > 0 ? 1 : delta < 0 ? -1 : 0),
+					(delta > 0 ? 1 : delta < 0 ? -1 : 0) *
+						cells,
 			),
 		);
 	};
 
+	const scrollTo = (row: number) => {
+		const maxScroll = Math.max(
+			0,
+			virtualBufferRanges.current.length -
+				Math.round(gridSize.current.rows / 2),
+		);
+
+		scrollOffset.current = Math.max(
+			0,
+			Math.min(maxScroll, row),
+		);
+	};
+
 	const onWheel = (e: React.WheelEvent) => {
-		adjustScrollPosition(e.deltaY);
+		scrollBy(e.deltaY, 1);
 	};
 
 	const getCursorPosition = () => {
@@ -771,6 +900,29 @@ const TerminalPage = (
 					);
 					ctx.globalCompositeOperation =
 						'source-over';
+					if (cell.char) {
+						const x =
+							c * cellSize.width +
+							cellSize.width / 2;
+						const y =
+							r * cellSize.height +
+							cellSize.height / 2;
+						if (
+							!cell.charColor ||
+							cell.charColor === 'inverse'
+						)
+							ctx.globalCompositeOperation =
+								'difference';
+						ctx.fillStyle =
+							cell.charColor || '#fff';
+						ctx.fillText(cell.char, x, y);
+						if (
+							!cell.charColor ||
+							cell.charColor === 'inverse'
+						)
+							ctx.globalCompositeOperation =
+								'source-over';
+					}
 				}
 			}
 		}
@@ -829,7 +981,7 @@ const TerminalPage = (
 		)
 			removeHighlight();
 
-		adjustScrollPosition();
+		scrollBy();
 
 		gridSize.current = newGridSize;
 	};
@@ -849,18 +1001,23 @@ const TerminalPage = (
 		renderCanvas();
 	};
 
-	const newLinePrep = async () => {
+	const newLinePrep = async (
+		doNewLine = true,
+	) => {
 		if (newLinePrefix) {
-			await pushData([
+			await pushData(
 				[
-					{
-						type: 'text',
-						value: newLinePrefix,
-						locked: true,
-						color: 'aqua',
-					},
+					[
+						{
+							type: 'text',
+							value: newLinePrefix,
+							locked: true,
+							color: 'aqua',
+						},
+					],
 				],
-			]);
+				!doNewLine,
+			);
 		}
 	};
 
@@ -885,7 +1042,9 @@ const TerminalPage = (
 	};
 
 	// 1 - up; -1 - down
-	const readCommandMemory = (dir: 1 | -1) => {
+	const readCommandMemory = async (
+		dir: 1 | -1,
+	) => {
 		if (commandMemory.current.length) {
 			if (dir === 1) {
 				if (commandMemoryIndex.current === -1)
@@ -897,41 +1056,50 @@ const TerminalPage = (
 						commandMemoryIndex.current - 1,
 					);
 				clearCurrentLine();
-				pushData([
+				await pushData(
 					[
-						{
-							type: 'text',
-							value:
-								commandMemory.current[
-									commandMemoryIndex.current
-								],
-						},
+						[
+							{
+								type: 'text',
+								value:
+									commandMemory.current[
+										commandMemoryIndex.current
+									],
+							},
+						],
 					],
-				]);
+					true,
+				);
 			} else if (
 				commandMemoryIndex.current <
 				commandMemory.current.length - 1
 			) {
 				commandMemoryIndex.current++;
 				clearCurrentLine();
-				pushData([
+				await pushData(
 					[
-						{
-							type: 'text',
-							value:
-								commandMemory.current[
-									commandMemoryIndex.current
-								],
-						},
+						[
+							{
+								type: 'text',
+								value:
+									commandMemory.current[
+										commandMemoryIndex.current
+									],
+							},
+						],
 					],
-				]);
+					true,
+				);
 			}
+			scrollIntoCursorView();
 		}
 	};
 
 	// Keyboard input
 	React.useEffect(() => {
-		const onKeyDown = (e: KeyboardEvent) => {
+		const onKeyDown = async (
+			e: KeyboardEvent,
+		) => {
 			if (!init.current) return;
 
 			let actionTaken = false;
@@ -944,24 +1112,20 @@ const TerminalPage = (
 				insertChar(e.key);
 				e.preventDefault();
 				actionTaken = true;
-			}
-			if (e.key === 'Enter') {
+			} else if (e.key === 'Enter') {
 				commandMemoryIndex.current = -1;
-				if (!highlight.current) submit();
+				if (!highlight.current) await submit();
 				e.preventDefault();
 				actionTaken = true;
-			}
-			if (e.key === 'Backspace') {
+			} else if (e.key === 'Backspace') {
 				commandMemoryIndex.current = -1;
 				backspace();
 				e.preventDefault();
 				actionTaken = true;
-			}
-			if (e.key === 'ArrowUp') {
-				readCommandMemory(1);
-			}
-			if (e.key === 'ArrowDown') {
-				readCommandMemory(-1);
+			} else if (e.key === 'ArrowUp') {
+				await readCommandMemory(1);
+			} else if (e.key === 'ArrowDown') {
+				await readCommandMemory(-1);
 			}
 			blinkAccRef.current = 0;
 			cursorVisible.current = true;
@@ -1049,6 +1213,7 @@ const TerminalPage = (
 	const doInit = async () => {
 		await pushInitData();
 		await newLinePrep();
+		await autoTypeAndSubmit('whoami');
 	};
 
 	React.useEffect(() => {
@@ -1101,6 +1266,8 @@ export namespace NTerminalApp {
 				value: ImageBitmap;
 				backgroundColor?: string;
 				locked?: boolean;
+				char?: string;
+				charColor?: string;
 		  };
 	export type TCursor = {
 		row: number;
@@ -1126,6 +1293,22 @@ export namespace NTerminalApp {
 				value: string;
 				backgroundColor?: string;
 				locked?: boolean;
+		  }
+		| {
+				type: 'progress';
+				length: number;
+				backgroundColor?: [
+					number,
+					number,
+					number,
+					number,
+				];
+				color: [number, number, number, number];
+				locked?: boolean;
+				value: number; // normalized percent 0 - 1
+				text?: string;
+				textColor?: string;
+				textAlign?: 'left' | 'middle' | 'right';
 		  };
 }
 
