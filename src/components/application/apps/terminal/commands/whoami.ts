@@ -355,20 +355,34 @@ export class CommandWhoAmI extends CommandBase {
 					],
 					[
 						{
+							type: 'image',
+							value: '/img/icons/gmail-icon.png',
+						},
+						{
 							type: 'text',
-							value: 'Email: chizz3x@gmail.com',
+							value: ' Email: chizz3x@gmail.com',
 						},
 					],
 					[
 						{
+							type: 'image',
+							value:
+								'/img/icons/discord-icon.png',
+						},
+						{
 							type: 'text',
-							value: 'Discord: chizz3x',
+							value: ' Discord: chizz3x',
 						},
 					],
 					[
 						{
+							type: 'image',
+							value:
+								'/img/icons/telegram-icon.png',
+						},
+						{
 							type: 'text',
-							value: 'Telegram: petrol_m',
+							value: ' Telegram: petrol_m',
 						},
 					],
 				],

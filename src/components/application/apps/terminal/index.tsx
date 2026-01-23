@@ -41,6 +41,7 @@ export class TerminalApp extends AppItem {
 				value: 'banner.png',
 			},
 		],
+		[],
 		[
 			{
 				type: 'text',
@@ -196,10 +197,12 @@ const TerminalPage = (
 	) => {
 		for (let i = 0; i < data.length; i++) {
 			const row = data[i];
-			const bufferData: NTerminalApp.TCell[] = [];
+			const bufferData: NTerminalApp.TCell[][] = [
+				[],
+			];
 			for (const part of row) {
 				if (part.type === 'text') {
-					bufferData.push(
+					bufferData[bufferData.length - 1].push(
 						...part.value.split('').map(
 							(m) =>
 								({
@@ -213,7 +216,7 @@ const TerminalPage = (
 						),
 					);
 				} else if (part.type === 'pixels') {
-					bufferData.push({
+					bufferData[bufferData.length - 1].push({
 						...part,
 						// Apparently a better way performance wise to pre-create pixels and draw them over canvas parts.
 						// Way damn faster though 500x500 starts lagging
@@ -236,22 +239,18 @@ const TerminalPage = (
 						cellSize.height,
 					);
 					for (let r = 0; r < cells.rows; r++) {
-						if (inline && r === 0) {
-							for (
-								let c = 0;
-								c < cells.cols;
-								c++
-							) {
-								buffer.current[
-									buffer.current.length - 1
-								].push({
+						const rowData = await Promise.all(
+							cells.chunks
+								.slice(
+									r * cells.cols,
+									(r + 1) * cells.cols,
+								)
+								.map<any>(async (m) => ({
 									type: 'pixels',
 									value: await createImageBitmap(
 										new ImageData(
 											normalizeRgba(
-												cells.chunks[
-													r * cells.cols + c
-												],
+												m,
 												cellSize.width,
 												cellSize.height,
 											),
@@ -260,35 +259,66 @@ const TerminalPage = (
 										),
 									),
 									locked: part.locked,
-								});
-							}
-						} else {
-							buffer.current.push(
-								await Promise.all(
-									cells.chunks
-										.slice(
-											r * cells.cols,
-											(r + 1) * cells.cols,
-										)
-										.map(async (m) => ({
-											type: 'pixels',
-											value:
-												await createImageBitmap(
-													new ImageData(
-														normalizeRgba(
-															m,
-															cellSize.width,
-															cellSize.height,
-														),
-														cellSize.width,
-														cellSize.height,
-													),
-												),
-											locked: part.locked,
-										})),
-								),
-							);
-						}
+								})),
+						);
+						if (r === 0)
+							bufferData[
+								bufferData.length - 1
+							].push(...rowData);
+						else bufferData.push(rowData);
+						// if (inline && r === 0) {
+						//	 for (
+						//		let c = 0;
+						//		c < cells.cols;
+						//		c++
+						//	 ) {
+						//		bufferData[
+						//			bufferData.length - 1
+						//		].push({
+						//			type: 'pixels',
+						//			value: await createImageBitmap(
+						//				new ImageData(
+						//					normalizeRgba(
+						//						cells.chunks[
+						//							r * cells.cols + c
+						//						],
+						//						cellSize.width,
+						//						cellSize.height,
+						//					),
+						//					cellSize.width,
+						//					cellSize.height,
+						//				),
+						//			),
+						//			locked: part.locked,
+						//		});
+						//	 }
+						// } else {
+						//	bufferData.push(
+						//		await Promise.all(
+						//			cells.chunks
+						//				.slice(
+						//					r * cells.cols,
+						//					(r + 1) * cells.cols,
+						//				)
+						//				.map(async (m) => ({
+						//					type: 'pixels',
+						//					value:
+						//						await createImageBitmap(
+						//							new ImageData(
+						//								normalizeRgba(
+						//									m,
+						//									cellSize.width,
+						//									cellSize.height,
+						//								),
+						//								cellSize.width,
+						//								cellSize.height,
+						//							),
+						//						),
+						//					locked: part.locked,
+						//				})),
+						//		),
+						//	);
+						// }
 					}
 				} else if (part.type === 'progress') {
 					for (let i = 0; i < part.length; i++) {
@@ -326,7 +356,9 @@ const TerminalPage = (
 							}
 						}
 
-						bufferData.push({
+						bufferData[
+							bufferData.length - 1
+						].push({
 							type: 'pixels',
 							value: await createImageBitmap(
 								new ImageData(
@@ -352,11 +384,14 @@ const TerminalPage = (
 					}
 				}
 			}
-			if (inline && i === 0)
+			if (inline && i === 0) {
 				buffer.current[
 					buffer.current.length - 1
-				].push(...bufferData);
-			else buffer.current.push(bufferData);
+				].push(...bufferData[0]);
+				buffer.current.push(
+					...bufferData.slice(1),
+				);
+			} else buffer.current.push(...bufferData);
 		}
 
 		updateVirtualBufferRanges();
@@ -1214,6 +1249,7 @@ const TerminalPage = (
 		await pushInitData();
 		await newLinePrep();
 		await autoTypeAndSubmit('whoami');
+		scrollTo(0);
 	};
 
 	React.useEffect(() => {
