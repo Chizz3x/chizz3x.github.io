@@ -67,6 +67,9 @@
 		"no-continue": "off",
 		"no-shadow": "off",
 		"no-await-in-loop": "off",
-		"class-methods-use-this": "off"
+		"class-methods-use-this": "off",
+		"@typescript-eslint/no-empty-interface": "off",
+		"no-else-return": "off",
+		"react/require-default-props": "off"
 	}
 }

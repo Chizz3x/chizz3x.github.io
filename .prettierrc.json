@@ -1,9 +1,10 @@
 {
-	"endOfLine": "auto",
-	"trailingComma": "all",
-	"bracketSpacing": true,
-	"eslintIntegration": true,
-	"printWidth": 50,
-	"useTabs": true,
-	"singleQuote": true
+  "endOfLine": "auto",
+  "trailingComma": "all",
+  "bracketSpacing": true,
+  "eslintIntegration": true,
+  "printWidth": 80,
+  "useTabs": false,
+  "singleQuote": true,
+  "tabWidth": 2
 }

@@ -1,9 +1,6 @@
 {
 	"editor.codeActionsOnSave": {
-		"source.fixAll.eslint": "explicit",
-		"eslint.autoFixOnSave": "explicit",
-		"source.organizeImports": "never",
-		"source.fixAll.stylelint": "explicit"
+		"source.fixAll.eslint": "explicit"
 	},
 	"files.eol": "\n",
 	"eslint.validate": [
