@@ -148,10 +148,17 @@ export function useDragAndDrop(
 
         // If finger moved too much during hold, cancel the drag entirely
         if (elapsed < DRAG_HOLD_MS && dist > DRAG_CANCEL_THRESHOLD) {
+          dragHappened.current = true;
           touchPotential.current = null;
         } else if (elapsed >= DRAG_HOLD_MS && dist > DRAG_THRESHOLD) {
           dragHappened.current = true;
           startDragging(touchPotential.current.element, posX, posY);
+        } else if (dist > 2) {
+          // Some movement detected but hasn't crossed any threshold yet —
+          // not a clean tap, so don't open the app on touchend.
+          // Keep touchPotential alive so the drag can still start if the
+          // user continues holding and moving.
+          dragHappened.current = true;
         }
       }
 
@@ -175,5 +182,7 @@ export function useDragAndDrop(
     onDragStart,
     onTouchStart,
     dragHappened,
+    /** The drag clone element — non-null only during an active drag */
+    draggableElement,
   };
 }

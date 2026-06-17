@@ -3,7 +3,6 @@ import styled from 'styled-components';
 import { CSSMediaSize } from '../const';
 import { AppItem } from '../components/application/application';
 import { TerminalApp } from '../components/application/apps/terminal';
-import { TestApp } from '../components/application/apps/test';
 import { DesktopBackground } from '../components/home/DesktopBackground';
 import { DesktopGrid } from '../components/home/DesktopGrid';
 import { DesktopIndicator } from '../components/home/DesktopIndicator';
@@ -90,16 +89,6 @@ function PageHome() {
         'middle',
         new TerminalApp(onCloseApp),
       );
-      for (let i = 0; i < 20; i++) {
-        insertAppAtPlace(
-          appGrid.current,
-          size.rows,
-          size.cols,
-          'middle',
-          'middle',
-          new TestApp(onCloseApp),
-        );
-      }
       for (let di = 0; di < appGrid.current.length; di++) {
         handleOverflow(appGrid.current, size.rows, size.cols, di);
       }
@@ -124,15 +113,15 @@ function PageHome() {
     onDragStart,
     onTouchStart,
     dragHappened,
+    draggableElement,
   } = useDragAndDrop(appGrid, desktopIndex, setSelectedCell, invalidate);
 
   const swipe = useDesktopSwipe(
     appGrid,
     desktopIndex,
-    draggableContainerRef as unknown as React.MutableRefObject<
-      HTMLDivElement | null | undefined
-    >,
+    draggableElement,
     invalidate,
+    gridRef,
   );
 
   return (
@@ -145,7 +134,7 @@ function PageHome() {
       </div>
 
       <GroundStyle
-        ref={gridRef ?? swipe.gridRef}
+        ref={gridRef}
         columns={size.cols}
         gap={gap}
         cellSize={cellSize}
