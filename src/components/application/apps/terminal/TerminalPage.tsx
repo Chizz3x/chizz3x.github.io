@@ -10,6 +10,11 @@ import {
   scrollTo as calcScrollTo,
   scrollIntoCursorView as calcScrollIntoCursor,
 } from './TerminalInput';
+import {
+  useScrollbar,
+  ScrollbarTrack,
+  ScrollbarThumb,
+} from '../../../../hooks/useScrollbar';
 import { MouseButton } from '../../../../const';
 import { NCommandBase } from './command-base';
 
@@ -56,6 +61,12 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     rows: 0,
   });
   const scrollOffset = React.useRef(0);
+
+  const scrollbar = useScrollbar({
+    scrollOffset,
+    clamp: calcScrollTo,
+  });
+
   const highlight = React.useRef<{
     start: NTerminalApp.TCursor;
     end: NTerminalApp.TCursor;
@@ -216,6 +227,8 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
       touchAccum.current -= dir * cells * threshold;
     }
   };
+
+  // Scrollbar is handled by the useScrollbar hook (see initialization above)
 
   // ── Insert / Backspace ───────────────────────────────────────────
 
@@ -424,6 +437,11 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
       cursorVisible.current,
       highlight.current,
     );
+
+    scrollbar.update(
+      termBuffer.current.virtualBufferRanges.length,
+      gridSize.current.rows,
+    );
   };
 
   // ── Init ─────────────────────────────────────────────────────────
@@ -537,7 +555,6 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     };
 
     rafRef.current = requestAnimationFrame(loop);
-
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
@@ -566,6 +583,12 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
         onMouseUp={onMouseUp}
         onContextMenu={(e) => e.preventDefault()}
       />
+      <ScrollbarTrack
+        ref={scrollbar.trackRef}
+        onPointerDown={scrollbar.onTrackPointerDown}
+      >
+        <ScrollbarThumb ref={scrollbar.thumbRef} />
+      </ScrollbarTrack>
     </TerminalPageStyle>
   );
 };
@@ -577,6 +600,7 @@ export { TerminalPage };
 const TerminalPageStyle = styled.div`
   flex-grow: 1;
   overflow: hidden;
+  position: relative;
   .char-grid {
     width: 100%;
     height: 100%;

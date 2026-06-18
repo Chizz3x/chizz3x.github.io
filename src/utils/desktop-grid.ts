@@ -36,7 +36,7 @@ export function reflowApps(
   appGrid.length = 0;
   appGrid.push([]);
   for (const app of apps) {
-    insertAppAtPlace(appGrid, rows, cols, 'middle', 'middle', app);
+    insertAppAtPlace(appGrid, rows, cols, app.placement, app.horizontal, app);
     onNewApp(app);
   }
   for (let di = 0; di < appGrid.length; di++) {
@@ -105,12 +105,15 @@ export function findFirstFreeDesktop(
   return -1;
 }
 
+export type TVertical = 'top' | 'middle' | 'bottom';
+export type THorizontal = 'left' | 'middle' | 'right';
+
 export function insertAppAtPlace(
   appGrid: AppItem[][],
   rows: number,
   cols: number,
-  vertical: 'top' | 'middle' | 'bottom',
-  horizontal: 'left' | 'middle' | 'right',
+  vertical: TVertical,
+  horizontal: THorizontal,
   app: AppItem,
   di = 0,
 ) {

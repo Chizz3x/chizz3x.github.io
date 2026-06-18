@@ -9,7 +9,6 @@ import { TerminalPage } from './TerminalPage';
 import buildCommand from '../../../../utils/build-command';
 
 export class TerminalApp extends AppItem {
-  icon = '/logo.png';
   title = 'Chizz3x';
   aid = '1';
 

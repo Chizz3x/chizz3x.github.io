@@ -2,7 +2,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { CSSMediaSize } from '../const';
 import { AppItem } from '../components/application/application';
-import { TerminalApp } from '../components/application/apps/terminal';
+import { createInitialApps } from '../components/application/apps/initial-apps';
 import { DesktopBackground } from '../components/home/DesktopBackground';
 import { DesktopGrid } from '../components/home/DesktopGrid';
 import { DesktopIndicator } from '../components/home/DesktopIndicator';
@@ -81,14 +81,19 @@ function PageHome() {
   React.useEffect(() => {
     if (!initSetup && size.cols * size.rows > 0) {
       setInitSetup(true);
-      insertAppAtPlace(
-        appGrid.current,
-        size.rows,
-        size.cols,
-        'middle',
-        'middle',
-        new TerminalApp(onCloseApp),
-      );
+      const initialApps = createInitialApps(onCloseApp);
+      for (const { app, placement, horizontal } of initialApps) {
+        app.placement = placement;
+        app.horizontal = horizontal;
+        insertAppAtPlace(
+          appGrid.current,
+          size.rows,
+          size.cols,
+          placement,
+          horizontal,
+          app,
+        );
+      }
       for (let di = 0; di < appGrid.current.length; di++) {
         handleOverflow(appGrid.current, size.rows, size.cols, di);
       }

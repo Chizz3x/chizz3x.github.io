@@ -2,7 +2,6 @@ import React from 'react';
 import { AppItem, Application } from '../../application';
 
 export class TestApp extends AppItem {
-  icon = '/logo.png';
   title = 'Test';
   aid = '0';
 

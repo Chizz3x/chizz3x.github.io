@@ -9,6 +9,8 @@ import styled, { FlattenSimpleInterpolation } from 'styled-components';
 import classes from '../../utils/classes';
 import { isTouchDevice } from '../../utils/touch-device';
 
+import type { TVertical, THorizontal } from '../../utils/desktop-grid';
+
 const minSize: NApplication.ISize = {
   width: 300,
   height: 150,
@@ -20,9 +22,11 @@ export abstract class AppItem {
   _destroyCB?: NApplication.IProps['onClose'];
 
   Application?: React.ReactElement;
-  abstract icon?: string | React.ReactElement;
-  abstract title: string;
-  abstract aid: string;
+  icon?: string | React.ReactElement = '/logo.png';
+  title = '';
+  aid = '';
+  placement: TVertical = 'middle';
+  horizontal: THorizontal = 'middle';
 
   constructor(destroyCB: NApplication.IProps['onClose']) {
     this._destroyCB = destroyCB;
