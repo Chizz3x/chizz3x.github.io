@@ -52,6 +52,10 @@ export namespace NCommandBase {
     | {
         name: 'write';
         data: NTerminalApp.TPushData[][];
+      }
+    | {
+        name: 'open';
+        aid: string;
       };
 
   export interface IExecuteProps {

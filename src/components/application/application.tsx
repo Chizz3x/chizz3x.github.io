@@ -18,6 +18,13 @@ const minSize: NApplication.ISize = {
 
 const resizeBarSize = 12;
 
+/** Global z-index counter so the last focused window sits on top. */
+let _zCounter = 1;
+function nextZIndex(): number {
+  _zCounter += 1;
+  return _zCounter;
+}
+
 export abstract class AppItem {
   _destroyCB?: NApplication.IProps['onClose'];
 
@@ -92,6 +99,13 @@ const Application = (props: NApplication.IProps) => {
   const dragging = React.useRef(false);
   const resizing = React.useRef(false);
   const rafId = React.useRef<number | null>(null);
+  const zIndex = React.useRef(nextZIndex());
+  const bringToFront = React.useCallback(() => {
+    zIndex.current = nextZIndex();
+    if (windowRef.current) {
+      windowRef.current.style.zIndex = String(zIndex.current);
+    }
+  }, []);
 
   const applyStyles = () => {
     if (!windowRef.current) return;
@@ -350,6 +364,7 @@ const Application = (props: NApplication.IProps) => {
         className={classes('application', 'fullscreen', props.className)}
         ref={windowRef}
         aid={aid}
+        onPointerDown={bringToFront}
       >
         <div className="fs-header">
           <div className="fs-header-left">
@@ -387,6 +402,8 @@ const Application = (props: NApplication.IProps) => {
       applicationStyle={applicationStyle}
       ref={windowRef}
       aid={aid}
+      style={{ zIndex: zIndex.current }}
+      onPointerDown={bringToFront}
     >
       <div onPointerDown={onHeaderMouseDown} className="header">
         <div className="header-left">

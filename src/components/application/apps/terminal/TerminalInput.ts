@@ -17,6 +17,28 @@ export function getCursorFromMouse(
   };
 }
 
+/**
+ * Given a cursor position, return the URL of a link cell at that position,
+ * or null if there is no link there.
+ */
+export function getLinkAtCursor(
+  cursor: NTerminalApp.TCursor,
+  buffer: NTerminalApp.TCell[][],
+  virtualBufferRanges: number[][],
+): string | null {
+  const range = virtualBufferRanges[cursor.row];
+  if (!range) return null;
+
+  const [bufferRow, startCol] = range;
+  const row = buffer[bufferRow];
+  if (!row) return null;
+
+  const cell = row[startCol + cursor.col];
+  if (!cell || cell.type !== 'link') return null;
+
+  return cell.url;
+}
+
 // ─── Highlight text extraction ────────────────────────────────────────────
 
 export function getHighlightedText(

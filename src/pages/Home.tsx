@@ -81,7 +81,7 @@ function PageHome() {
   React.useEffect(() => {
     if (!initSetup && size.cols * size.rows > 0) {
       setInitSetup(true);
-      const initialApps = createInitialApps(onCloseApp);
+      const initialApps = createInitialApps(onCloseApp, launchAppByAid);
       for (const { app, placement, horizontal } of initialApps) {
         app.placement = placement;
         app.horizontal = horizontal;
@@ -110,6 +110,19 @@ function PageHome() {
     if (swipe.desktopSwiperSwiping.current) return;
     appGrid.current[desktopIndex.current][index].build(isTouchDevice());
     setSelectedCell(-1);
+  };
+
+  /** Launch an app by its aid across all desktops */
+  const launchAppByAid = (aid: string) => {
+    for (const desktop of appGrid.current) {
+      for (const app of desktop) {
+        if (app?.aid === aid) {
+          app.build(isTouchDevice());
+          invalidate();
+          return;
+        }
+      }
+    }
   };
 
   const {

@@ -71,6 +71,20 @@ export class TerminalBuffer {
                 }) as NTerminalApp.TCell,
             ),
           );
+        } else if (part.type === 'link') {
+          bufferData[bufferData.length - 1].push(
+            ...part.value.split('').map(
+              (m) =>
+                ({
+                  type: 'link',
+                  value: m,
+                  url: part.url,
+                  color: part.color,
+                  backgroundColor: part.backgroundColor,
+                  locked: part.locked,
+                }) as NTerminalApp.TCell,
+            ),
+          );
         } else if (part.type === 'pixels') {
           bufferData[bufferData.length - 1].push({
             ...part,

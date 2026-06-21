@@ -5,12 +5,18 @@ import { CommandBase } from './command-base';
 import { CommandWhoAmI } from './commands/whoami';
 import { CommandHelp } from './commands/help';
 import { CommandClear } from './commands/clear';
+import { CommandLinks } from './commands/links';
+import { CommandBanner } from './commands/banner';
+import { CommandNeofetch } from './commands/neofetch';
+import { CommandOpen } from './commands/open';
 import { TerminalPage } from './TerminalPage';
 import buildCommand from '../../../../utils/build-command';
 
 export class TerminalApp extends AppItem {
   title = 'Chizz3x';
-  aid = '1';
+  aid = 'chizz3x';
+  /** Callback to launch another app by aid from inside the terminal */
+  onAppLaunch?: (aid: string) => void;
 
   newLinePrefix = '#Chizz3x>';
   initData: NTerminalApp.TPushData[][] = [
@@ -52,6 +58,10 @@ export class TerminalApp extends AppItem {
     ...buildCommand(CommandWhoAmI, new CommandWhoAmI()),
     ...buildCommand(CommandHelp, new CommandHelp()),
     ...buildCommand(CommandClear, new CommandClear()),
+    ...buildCommand(CommandLinks, new CommandLinks()),
+    ...buildCommand(CommandBanner, new CommandBanner()),
+    ...buildCommand(CommandNeofetch, new CommandNeofetch()),
+    ...buildCommand(CommandOpen, new CommandOpen()),
   ]);
 
   build(fullScreen?: boolean) {
@@ -68,6 +78,7 @@ export class TerminalApp extends AppItem {
           newLinePrefix={this.newLinePrefix}
           initData={this.initData}
           commands={this.commands}
+          onAppLaunch={this.onAppLaunch}
         />
       </Application>
     );

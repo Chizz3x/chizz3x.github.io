@@ -6,6 +6,7 @@ import { applyResize, renderCanvas } from './TerminalRenderer';
 import {
   getCursorFromMouse,
   getHighlightedText,
+  getLinkAtCursor,
   scrollBy as calcScrollBy,
   scrollTo as calcScrollTo,
   scrollIntoCursorView as calcScrollIntoCursor,
@@ -18,7 +19,7 @@ import {
 import { MouseButton } from '../../../../const';
 import { NCommandBase } from './command-base';
 
-// ─── Constants ────────────────────────────────────────────────────────────
+// --- Constants ------------------------------------------------------------
 
 const FPS = 60;
 const FRAME_TIME = 1000 / FPS;
@@ -34,12 +35,13 @@ const cellSize: NTerminalApp.ICellSize = {
 const maxRow = 1000;
 const maxBuffer = 1000;
 
-// ─── Component ────────────────────────────────────────────────────────────
+// --- Component ------------------------------------------------------------
 
 const TerminalPage = (props: NTerminalApp.IProps) => {
-  const { newLinePrefix, initData, commands } = props;
+  const { newLinePrefix, initData, commands, onAppLaunch } = props;
 
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const hiddenInputRef = React.useRef<HTMLInputElement>(null);
   const init = React.useRef(false);
 
   const termBuffer = React.useRef<TerminalBuffer>(
@@ -85,7 +87,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     termBuffer.current.updateVirtualBufferRanges(gridSize.current.cols);
   };
 
-  // ── Command execution ─────────────────────────────────────────────
+  // -- Command execution ---------------------------------------------
 
   const performAction = async (action: NCommandBase.TAction) => {
     switch (action.name) {
@@ -95,6 +97,9 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
         break;
       case 'write':
         await pushData(action.data);
+        break;
+      case 'open':
+        onAppLaunch?.(action.aid);
         break;
     }
   };
@@ -176,7 +181,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     scrollIntoCursorView();
   };
 
-  // ── Scroll helpers ────────────────────────────────────────────────
+  // -- Scroll helpers ------------------------------------------------
 
   const scrollIntoCursorView = () => {
     const cursorPosition = termBuffer.current.findVirtualCursor(
@@ -202,16 +207,19 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
 
   const lastTouchY = React.useRef(0);
   const touchAccum = React.useRef(0);
+  const touchMoved = React.useRef(false);
 
   const onTouchStartScroll = (e: React.TouchEvent) => {
     lastTouchY.current = e.touches[0].clientY;
     touchAccum.current = 0;
+    touchMoved.current = false;
   };
 
   const onTouchMoveScroll = (e: React.TouchEvent) => {
     const deltaY = lastTouchY.current - e.touches[0].clientY;
     lastTouchY.current = e.touches[0].clientY;
     touchAccum.current += deltaY;
+    if (Math.abs(deltaY) > 5) touchMoved.current = true;
 
     const threshold = 12; // px before scrolling one line
     const cells = Math.floor(Math.abs(touchAccum.current) / threshold);
@@ -230,7 +238,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
 
   // Scrollbar is handled by the useScrollbar hook (see initialization above)
 
-  // ── Insert / Backspace ───────────────────────────────────────────
+  // -- Insert / Backspace -------------------------------------------
 
   const insertChar = (ch: string, locked = false) => {
     const row = termBuffer.current.buffer[termBuffer.current.buffer.length - 1];
@@ -253,7 +261,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     scrollIntoCursorView();
   };
 
-  // ── Command memory ───────────────────────────────────────────────
+  // -- Command memory -----------------------------------------------
 
   const readCommandMemory = async (dir: 1 | -1) => {
     if (!commandMemory.current.length) return;
@@ -296,7 +304,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     scrollIntoCursorView();
   };
 
-  // ── New line prep ────────────────────────────────────────────────
+  // -- New line prep ------------------------------------------------
 
   const newLinePrep = async (doNewLine = true) => {
     if (newLinePrefix) {
@@ -322,7 +330,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     }
   };
 
-  // ── Mouse ────────────────────────────────────────────────────────
+  // -- Mouse --------------------------------------------------------
 
   const onMouseDown = (e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -378,11 +386,71 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     highlightStartRef.current = null;
   };
 
+  const onDoubleClickLink = (e: React.MouseEvent) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const cursor = getCursorFromMouse(
+      e.clientX,
+      e.clientY,
+      rect,
+      scrollOffset.current,
+      cellSize,
+    );
+    const url = getLinkAtCursor(
+      cursor,
+      termBuffer.current.buffer,
+      termBuffer.current.virtualBufferRanges,
+    );
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   const removeHighlight = () => {
     highlight.current = null;
   };
 
-  // ── Render loop update ───────────────────────────────────────────
+  // -- Mobile keyboard via hidden input ------------------------------
+
+  const onFocusInput = () => {
+    hiddenInputRef.current?.focus();
+  };
+
+  // Keep the hidden input focused if something steals it
+  const onHiddenInputBlur = () => {
+    requestAnimationFrame(() => {
+      if (
+        hiddenInputRef.current &&
+        document.activeElement !== hiddenInputRef.current
+      ) {
+        hiddenInputRef.current.focus();
+      }
+    });
+  };
+
+  const onHiddenInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    const { value } = input;
+
+    for (let i = 0; i < value.length; i++) {
+      const ch = value[i];
+      if (ch === '\n') {
+        submit();
+      } else {
+        insertChar(ch);
+      }
+    }
+    input.value = '';
+  };
+
+  const onHiddenKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      backspace();
+    }
+  };
+
+  // -- Render loop update -------------------------------------------
 
   const onUpdate = (delta: number) => {
     blinkAccRef.current += delta;
@@ -400,6 +468,8 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
       const newGrid = applyResize(canvas, parent, resize, cellSize);
       if (newGrid) {
         if (newGrid.cols !== gridSize.current.cols) removeHighlight();
+        gridSize.current = newGrid;
+        // Clamp scroll offset and re-scroll into cursor view for the new viewport
         scrollOffset.current = calcScrollBy(
           0,
           0,
@@ -407,7 +477,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
           gridSize.current.rows,
           scrollOffset.current,
         );
-        gridSize.current = newGrid;
+        scrollIntoCursorView();
       }
     }
 
@@ -444,7 +514,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     );
   };
 
-  // ── Init ─────────────────────────────────────────────────────────
+  // -- Init ---------------------------------------------------------
 
   const doInit = async () => {
     await pushInitData();
@@ -453,7 +523,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     scrollOffset.current = 0;
   };
 
-  // ── Effects ──────────────────────────────────────────────────────
+  // -- Effects ------------------------------------------------------
 
   // Keyboard listener
   React.useEffect(() => {
@@ -568,7 +638,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     }
   }, []);
 
-  // ── Render ───────────────────────────────────────────────────────
+  // -- Render -------------------------------------------------------
 
   return (
     <TerminalPageStyle>
@@ -578,10 +648,25 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
         onWheel={onWheel}
         onTouchStart={onTouchStartScroll}
         onTouchMove={onTouchMoveScroll}
+        onTouchEnd={() => {
+          if (!touchMoved.current) onFocusInput();
+        }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
+        onDoubleClick={onDoubleClickLink}
         onContextMenu={(e) => e.preventDefault()}
+      />
+      <input
+        ref={hiddenInputRef}
+        className="hidden-input"
+        spellCheck={false}
+        autoComplete="off"
+        autoCorrect="off"
+        autoCapitalize="off"
+        onInput={onHiddenInput}
+        onKeyDown={onHiddenKeyDown}
+        onBlur={onHiddenInputBlur}
       />
       <ScrollbarTrack
         ref={scrollbar.trackRef}
@@ -595,7 +680,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
 
 export { TerminalPage };
 
-// ─── Styles ───────────────────────────────────────────────────────────────
+// --- Styles ---------------------------------------------------------------
 
 const TerminalPageStyle = styled.div`
   flex-grow: 1;
@@ -606,5 +691,13 @@ const TerminalPageStyle = styled.div`
     height: 100%;
     user-select: none;
     touch-action: none;
+  }
+  .hidden-input {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
   }
 `;

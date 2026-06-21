@@ -58,8 +58,9 @@ export function useDragAndDrop(
     isDragging.current = true;
   };
 
-  // Mouse drag start
+  // Mouse drag start — only left button
   const onDragStart = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
     startDragging(e.currentTarget as HTMLElement, e.clientX, e.clientY);
   };
 

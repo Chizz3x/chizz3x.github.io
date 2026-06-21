@@ -122,6 +122,26 @@ export function renderCanvas(
           ctx.fillStyle = cell.color || '#fff';
           ctx.fillText(cell.value, x, y);
         }
+      } else if (cell.type === 'link') {
+        const x = c * cellSize.width + cellSize.width / 2;
+        const y = r * cellSize.height + cellSize.height / 2;
+
+        ctx.fillStyle = cell.color || '#00bcd4';
+        ctx.fillText(cell.value, x, y);
+
+        // Underline
+        ctx.strokeStyle = cell.color || '#00bcd4';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(
+          c * cellSize.width,
+          r * cellSize.height + cellSize.height - 2,
+        );
+        ctx.lineTo(
+          (c + 1) * cellSize.width,
+          r * cellSize.height + cellSize.height - 2,
+        );
+        ctx.stroke();
       } else if (cell.type === 'pixels') {
         ctx.globalCompositeOperation = 'lighter';
         ctx.drawImage(cell.value, c * cellSize.width, r * cellSize.height);

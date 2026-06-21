@@ -5,6 +5,7 @@ export namespace NTerminalApp {
     newLinePrefix?: string;
     initData?: TPushData[][];
     commands?: Map<string, CommandBase>;
+    onAppLaunch?: (aid: string) => void;
   }
 
   export interface IGridSize {
@@ -19,6 +20,14 @@ export namespace NTerminalApp {
     | {
         type: 'char';
         value: string;
+        color?: string;
+        backgroundColor?: string;
+        locked?: boolean;
+      }
+    | {
+        type: 'link';
+        value: string;
+        url: string;
         color?: string;
         backgroundColor?: string;
         locked?: boolean;
@@ -40,6 +49,14 @@ export namespace NTerminalApp {
     | {
         type: 'text';
         value: string;
+        color?: string;
+        backgroundColor?: string;
+        locked?: boolean;
+      }
+    | {
+        type: 'link';
+        value: string;
+        url: string;
         color?: string;
         backgroundColor?: string;
         locked?: boolean;

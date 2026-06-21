@@ -31,6 +31,30 @@ export class CommandHelp extends CommandBase {
               value: '> whoami [wai] - Generic information about me',
             },
           ],
+          [
+            {
+              type: 'text',
+              value: '> links [ln, social] - Display social links',
+            },
+          ],
+          [
+            {
+              type: 'text',
+              value: '> banner [chizz3x] - Display the Chizz3x logo',
+            },
+          ],
+          [
+            {
+              type: 'text',
+              value: '> neofetch - Display system info',
+            },
+          ],
+          [
+            {
+              type: 'text',
+              value: '> open <app-id> - Open an app by its ID',
+            },
+          ],
         ],
       };
     },
