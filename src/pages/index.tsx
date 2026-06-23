@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Navigate,
   Route,
   RouteProps,
   Routes,
@@ -9,7 +10,6 @@ import {
 import { Layout } from '../components/layout';
 import { ROUTES } from '../routes';
 import { PageHome } from './Home';
-import { Page404 } from './404';
 
 const PAGES: RouteProps[] = [
   {
@@ -41,14 +41,7 @@ const Index = () => {
       {PAGES.map((page, index) => (
         <Route key={index} {...page} path={`${page.path}`} />
       ))}
-      <Route
-        path="/*"
-        element={
-          <Layout>
-            <Page404 />
-          </Layout>
-        }
-      />
+      <Route path="/*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 };
