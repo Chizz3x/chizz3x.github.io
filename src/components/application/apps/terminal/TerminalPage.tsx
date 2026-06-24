@@ -1,93 +1,129 @@
 import React from 'react';
 import styled from 'styled-components';
 import { NTerminalApp } from './types';
-import { TerminalBuffer } from './TerminalBuffer';
-import { applyResize, renderCanvas } from './TerminalRenderer';
+import { renderCanvas } from './TerminalRenderer';
 import {
   getCursorFromMouse,
   getHighlightedText,
   getLinkAtCursor,
-  scrollBy as calcScrollBy,
-  scrollTo as calcScrollTo,
-  scrollIntoCursorView as calcScrollIntoCursor,
 } from './TerminalInput';
 import {
-  useScrollbar,
+  useCanvasTerminal,
   ScrollbarTrack,
   ScrollbarThumb,
-} from '../../../../hooks/useScrollbar';
+} from '../../../../hooks/useCanvasTerminal';
+import {
+  useHiddenInput,
+  skipIfInputFocused,
+} from '../../../../hooks/useHiddenInput';
 import { MouseButton } from '../../../../const';
 import { NCommandBase } from './command-base';
 
 // --- Constants ------------------------------------------------------------
 
-const FPS = 60;
-const FRAME_TIME = 1000 / FPS;
 const CURSOR_BLINK_FPS = 1;
 const CURSOR_BLINK_INTERVAL = 1000 / CURSOR_BLINK_FPS;
-const MAX_DELTA = 100;
 const MAX_COMMAND_MEMORY = 100;
-
-const cellSize: NTerminalApp.ICellSize = {
-  width: 8,
-  height: 14,
-};
-const maxRow = 1000;
-const maxBuffer = 1000;
 
 // --- Component ------------------------------------------------------------
 
 const TerminalPage = (props: NTerminalApp.IProps) => {
   const { newLinePrefix, initData, commands, onAppLaunch } = props;
 
-  const canvasRef = React.useRef<HTMLCanvasElement>(null);
-  const hiddenInputRef = React.useRef<HTMLInputElement>(null);
+  // -- Canvas lifecycle ----------------------------------------------------
+
   const init = React.useRef(false);
+  const cursorInputCol = React.useRef(0);
+  const prevColsRef = React.useRef(0);
+  /** True until the init phase completes and layout has settled. While set,
+   *  onResize and submit skip scroll-to-cursor / scroll-to-bottom so the
+   *  initial content stays at the top of the viewport. */
+  const skipScrollRef = React.useRef(false);
 
-  const termBuffer = React.useRef<TerminalBuffer>(
-    new TerminalBuffer(cellSize.width, cellSize.height, maxRow, maxBuffer),
-  );
-  const commandMemory = React.useRef<string[]>([]);
-  const commandMemoryIndex = React.useRef(-1);
-
-  const rafRef = React.useRef<number>();
-  const lastTimeRef = React.useRef(0);
-  const accRef = React.useRef(0);
-  const pendingResizeRef = React.useRef<{
-    w: number;
-    h: number;
-  } | null>(null);
-
-  const gridSize = React.useRef<NTerminalApp.IGridSize>({
-    cols: 0,
-    rows: 0,
-  });
-  const scrollOffset = React.useRef(0);
-
-  const scrollbar = useScrollbar({
+  const {
+    canvasRef,
+    termBuffer,
+    gridSize,
     scrollOffset,
-    clamp: calcScrollTo,
+    pushData,
+    updateVR,
+    scrollIntoCursorView,
+    onWheel,
+    onTouchStartScroll,
+    onTouchMoveScroll,
+    touchMoved,
+    scrollbar,
+  } = useCanvasTerminal({
+    onRender: (
+      ctx,
+      { buffer, virtualBufferRanges, scrollOffset: so, gridSize: gs },
+    ) => {
+      // Cursor blink
+      blinkAccRef.current += FRAME_TIME_HACK;
+      while (blinkAccRef.current >= CURSOR_BLINK_INTERVAL) {
+        blinkAccRef.current -= CURSOR_BLINK_INTERVAL;
+        cursorVisible.current = !cursorVisible.current;
+      }
+
+      const virtualCursor = findTerminalCursor(gs.cols);
+
+      renderCanvas(
+        ctx,
+        buffer,
+        virtualBufferRanges,
+        so,
+        gs,
+        cellSize,
+        virtualCursor,
+        cursorVisible.current,
+        highlight.current,
+      );
+    },
+    onResize: (newGrid) => {
+      if (newGrid.cols !== prevColsRef.current) {
+        removeHighlight();
+        prevColsRef.current = newGrid.cols;
+      }
+      // The hook's runResize already forces scrollOffset to 0 on the very
+      // first resize (rows went 0 → non-zero).  But if the terminal has
+      // already produced output by then, findVirtualCursor will point at
+      // the prompt at the bottom and scrollIntoCursorViewFromEdit would
+      // scroll us right back down.  During init we skip that and stay at
+      // the top so the banner / initial output is visible.
+      if (!skipScrollRef.current) {
+        scrollIntoCursorViewFromEdit();
+      }
+    },
   });
 
+  // HACK: used inside onRender which is captured once. All state it reads
+  // must be in refs, so we use a ref for the blink accumulator.
+  const FRAME_TIME_HACK = 1000 / 60;
+  // Refs for cursor blink + highlight
+  const blinkAccRef = React.useRef(0);
+  const cursorVisible = React.useRef(true);
   const highlight = React.useRef<{
     start: NTerminalApp.TCursor;
     end: NTerminalApp.TCursor;
   } | null>(null);
   const highlightStartRef = React.useRef<NTerminalApp.TCursor | null>(null);
-  const blinkAccRef = React.useRef(0);
-  const cursorVisible = React.useRef(true);
 
-  // Convenience wrapper: push data + rebuild virtual ranges
-  const pushData = async (data: NTerminalApp.TPushData[][], inline = false) => {
-    await termBuffer.current.pushData(data, inline);
-    termBuffer.current.updateVirtualBufferRanges(gridSize.current.cols);
+  // Helper: compute virtual cursor for the terminal command line
+  const findTerminalCursor = (cols: number) => {
+    const editStart = getEditStart();
+    const lastRowIdx = termBuffer.current.buffer.length - 1;
+    const bufferCol = editStart >= 0 ? editStart + cursorInputCol.current : 0;
+    return termBuffer.current.findVirtualCursor(cols, lastRowIdx, bufferCol);
   };
 
-  const updateVR = () => {
-    termBuffer.current.updateVirtualBufferRanges(gridSize.current.cols);
+  const scrollIntoCursorViewFromEdit = () => {
+    const vc = findTerminalCursor(gridSize.current.cols);
+    scrollIntoCursorView(vc.virtualRow, vc.virtualCol);
   };
 
-  // -- Command execution ---------------------------------------------
+  const cellSize = { width: 8, height: 14 };
+
+  // -- Command execution ---------------------------------------------------
 
   const performAction = async (action: NCommandBase.TAction) => {
     switch (action.name) {
@@ -106,12 +142,7 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
 
   const noCommand = async (cmd: string) => {
     await pushData([
-      [
-        {
-          type: 'text',
-          value: `Command '${cmd}' does not exist`,
-        },
-      ],
+      [{ type: 'text', value: `Command '${cmd}' does not exist` }],
       [
         {
           type: 'text',
@@ -140,19 +171,105 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
   };
 
   const autoTypeAndSubmit = async (text: string) => {
+    await pushData([[{ type: 'text', value: text }]], true);
+    await submit();
+  };
+
+  // -- Edit helpers --------------------------------------------------------
+
+  /** Index of the first unlocked cell in the last row.
+   *  When all cells are locked, returns the row length so the cursor
+   *  sits right after the last locked cell. */
+  const getEditStart = (): number => {
+    const lastRow = termBuffer.current.getLastRow();
+    const idx = lastRow.findIndex((c) => !c.locked);
+    return idx >= 0 ? idx : lastRow.length;
+  };
+
+  const insertChar = (ch: string, locked = false) => {
+    const row = termBuffer.current.buffer[termBuffer.current.buffer.length - 1];
+    if (row.length >= 1000) return;
+    const editStart = getEditStart();
+    if (locked) {
+      row.push({ type: 'char', value: ch, locked });
+    } else {
+      const insCol = editStart + cursorInputCol.current;
+      row.splice(insCol, 0, { type: 'char', value: ch, locked: false });
+      cursorInputCol.current++;
+    }
+    scrollIntoCursorViewFromEdit();
+  };
+
+  const backspace = () => {
+    const editStart = getEditStart();
+    if (cursorInputCol.current === 0) return;
+    const row = termBuffer.current.buffer[termBuffer.current.buffer.length - 1];
+    const delCol = editStart + cursorInputCol.current - 1;
+    if (row[delCol] && !row[delCol].locked) {
+      row.splice(delCol, 1);
+      cursorInputCol.current--;
+    }
+    scrollIntoCursorViewFromEdit();
+  };
+
+  // -- Command memory ------------------------------------------------------
+
+  const commandMemory = React.useRef<string[]>([]);
+  const commandMemoryIndex = React.useRef(-1);
+
+  const readCommandMemory = async (dir: 1 | -1) => {
+    if (!commandMemory.current.length) return;
+
+    if (dir === 1) {
+      if (commandMemoryIndex.current === -1)
+        commandMemoryIndex.current = commandMemory.current.length - 1;
+      else
+        commandMemoryIndex.current = Math.max(
+          0,
+          commandMemoryIndex.current - 1,
+        );
+    } else if (commandMemoryIndex.current < commandMemory.current.length - 1) {
+      commandMemoryIndex.current++;
+    } else {
+      return;
+    }
+
+    termBuffer.current.clearLine();
     await pushData(
       [
         [
           {
             type: 'text',
-            value: text,
+            value: commandMemory.current[commandMemoryIndex.current],
           },
         ],
       ],
       true,
     );
-    await submit();
+    // Place cursor at the end of the loaded command text
+    cursorInputCol.current =
+      commandMemory.current[commandMemoryIndex.current]?.length ?? 0;
+    scrollIntoCursorViewFromEdit();
   };
+
+  // -- New line prep -------------------------------------------------------
+
+  const newLinePrep = async (doNewLine = true) => {
+    if (newLinePrefix) {
+      await pushData(
+        [[{ type: 'text', value: newLinePrefix, locked: true, color: 'aqua' }]],
+        !doNewLine,
+      );
+    }
+  };
+
+  const pushInitData = async () => {
+    if (initData) {
+      await pushData(initData);
+    }
+  };
+
+  // -- Submit --------------------------------------------------------------
 
   const submit = async () => {
     const cmdCells = termBuffer.current.getLastRow().filter((f) => !f.locked);
@@ -174,163 +291,38 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     const doNewLine = !!termBuffer.current.rowCount && !noData;
 
     termBuffer.current.buffer.push([]);
-    if (termBuffer.current.buffer.length > maxBuffer)
+    if (termBuffer.current.buffer.length > 1000)
       termBuffer.current.buffer.shift();
 
+    cursorInputCol.current = 0;
     newLinePrep(doNewLine);
-    scrollIntoCursorView();
-  };
-
-  // -- Scroll helpers ------------------------------------------------
-
-  const scrollIntoCursorView = () => {
-    const cursorPosition = termBuffer.current.findVirtualCursor(
-      gridSize.current.cols,
-    );
-    const newOffset = calcScrollIntoCursor(
-      cursorPosition,
-      scrollOffset.current,
-      gridSize.current.rows,
-    );
-    if (newOffset !== null) scrollOffset.current = newOffset;
-  };
-
-  const onWheel = (e: React.WheelEvent) => {
-    scrollOffset.current = calcScrollBy(
-      e.deltaY,
-      1,
-      termBuffer.current.virtualBufferRanges.length,
-      gridSize.current.rows,
-      scrollOffset.current,
-    );
-  };
-
-  const lastTouchY = React.useRef(0);
-  const touchAccum = React.useRef(0);
-  const touchMoved = React.useRef(false);
-
-  const onTouchStartScroll = (e: React.TouchEvent) => {
-    lastTouchY.current = e.touches[0].clientY;
-    touchAccum.current = 0;
-    touchMoved.current = false;
-  };
-
-  const onTouchMoveScroll = (e: React.TouchEvent) => {
-    const deltaY = lastTouchY.current - e.touches[0].clientY;
-    lastTouchY.current = e.touches[0].clientY;
-    touchAccum.current += deltaY;
-    if (Math.abs(deltaY) > 5) touchMoved.current = true;
-
-    const threshold = 12; // px before scrolling one line
-    const cells = Math.floor(Math.abs(touchAccum.current) / threshold);
-    if (cells > 0) {
-      const dir = touchAccum.current > 0 ? 1 : -1;
-      scrollOffset.current = calcScrollBy(
-        dir,
-        cells,
-        termBuffer.current.virtualBufferRanges.length,
-        gridSize.current.rows,
-        scrollOffset.current,
-      );
-      touchAccum.current -= dir * cells * threshold;
+    if (!skipScrollRef.current) {
+      // Rebuild virtual ranges so they include the new prompt row, then
+      // scroll so the prompt sits at the bottom of the viewport.
+      updateVR();
+      const lastVR = termBuffer.current.virtualBufferRanges.length - 1;
+      scrollOffset.current = Math.max(0, lastVR - gridSize.current.rows + 1);
     }
   };
 
-  // Scrollbar is handled by the useScrollbar hook (see initialization above)
+  // -- Init ----------------------------------------------------------------
 
-  // -- Insert / Backspace -------------------------------------------
-
-  const insertChar = (ch: string, locked = false) => {
-    const row = termBuffer.current.buffer[termBuffer.current.buffer.length - 1];
-    if (row.length >= maxRow) return;
-    row.push({
-      type: 'char',
-      value: ch,
-      locked,
-    });
-    scrollIntoCursorView();
+  const doInit = async () => {
+    skipScrollRef.current = true;
+    await pushInitData();
+    await newLinePrep();
+    await autoTypeAndSubmit('whoami');
+    // Allow normal scroll behavior from now on.  The hook's runResize
+    // already forces scrollOffset to 0 on the first resize, so we're
+    // still at the top after layout settles.
+    skipScrollRef.current = false;
   };
 
-  const backspace = () => {
-    const row = termBuffer.current.buffer[termBuffer.current.buffer.length - 1];
-    const cell = row[row.length - 1];
-    if (!cell) return;
-    if (!cell.locked) {
-      termBuffer.current.buffer[termBuffer.current.buffer.length - 1].pop();
-    }
-    scrollIntoCursorView();
+  // -- Mouse handling ------------------------------------------------------
+
+  const removeHighlight = () => {
+    highlight.current = null;
   };
-
-  // -- Command memory -----------------------------------------------
-
-  const readCommandMemory = async (dir: 1 | -1) => {
-    if (!commandMemory.current.length) return;
-
-    if (dir === 1) {
-      if (commandMemoryIndex.current === -1)
-        commandMemoryIndex.current = commandMemory.current.length - 1;
-      else
-        commandMemoryIndex.current = Math.max(
-          0,
-          commandMemoryIndex.current - 1,
-        );
-      termBuffer.current.clearLine();
-      await pushData(
-        [
-          [
-            {
-              type: 'text',
-              value: commandMemory.current[commandMemoryIndex.current],
-            },
-          ],
-        ],
-        true,
-      );
-    } else if (commandMemoryIndex.current < commandMemory.current.length - 1) {
-      commandMemoryIndex.current++;
-      termBuffer.current.clearLine();
-      await pushData(
-        [
-          [
-            {
-              type: 'text',
-              value: commandMemory.current[commandMemoryIndex.current],
-            },
-          ],
-        ],
-        true,
-      );
-    }
-    scrollIntoCursorView();
-  };
-
-  // -- New line prep ------------------------------------------------
-
-  const newLinePrep = async (doNewLine = true) => {
-    if (newLinePrefix) {
-      await pushData(
-        [
-          [
-            {
-              type: 'text',
-              value: newLinePrefix,
-              locked: true,
-              color: 'aqua',
-            },
-          ],
-        ],
-        !doNewLine,
-      );
-    }
-  };
-
-  const pushInitData = async () => {
-    if (initData) {
-      await pushData(initData);
-    }
-  };
-
-  // -- Mouse --------------------------------------------------------
 
   const onMouseDown = (e: React.MouseEvent) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -344,14 +336,9 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
         cellSize,
       );
       highlightStartRef.current = pos;
-      highlight.current = {
-        start: pos,
-        end: pos,
-      };
+      highlight.current = { start: pos, end: pos };
     }
-    if (e.button === MouseButton.Right) {
-      highlight.current = null;
-    }
+    if (e.button === MouseButton.Right) highlight.current = null;
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
@@ -370,15 +357,9 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
       (pos.row === highlightStartRef.current.row &&
         pos.col < highlightStartRef.current.col)
     ) {
-      highlight.current = {
-        start: pos,
-        end: highlightStartRef.current,
-      };
+      highlight.current = { start: pos, end: highlightStartRef.current };
     } else {
-      highlight.current = {
-        start: highlightStartRef.current,
-        end: pos,
-      };
+      highlight.current = { start: highlightStartRef.current, end: pos };
     }
   };
 
@@ -401,134 +382,44 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
       termBuffer.current.buffer,
       termBuffer.current.virtualBufferRanges,
     );
-    if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    }
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const removeHighlight = () => {
-    highlight.current = null;
-  };
+  // -- Hidden input --------------------------------------------------------
 
-  // -- Mobile keyboard via hidden input ------------------------------
-
-  const onFocusInput = () => {
-    hiddenInputRef.current?.focus();
-  };
-
-  // Keep the hidden input focused if something steals it
-  const onHiddenInputBlur = () => {
-    requestAnimationFrame(() => {
-      if (
-        hiddenInputRef.current &&
-        document.activeElement !== hiddenInputRef.current
-      ) {
-        hiddenInputRef.current.focus();
-      }
-    });
-  };
-
-  const onHiddenInput = (e: React.FormEvent<HTMLInputElement>) => {
-    const input = e.currentTarget;
-    const { value } = input;
-
-    for (let i = 0; i < value.length; i++) {
-      const ch = value[i];
-      if (ch === '\n') {
-        submit();
-      } else {
-        insertChar(ch);
-      }
-    }
-    input.value = '';
-  };
-
-  const onHiddenKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Backspace') {
-      e.preventDefault();
+  const { hiddenInputRef, onFocusInput, inputHandlers } = useHiddenInput({
+    onChar: (ch) => {
+      commandMemoryIndex.current = -1;
+      insertChar(ch);
+    },
+    onEnter: () => {
+      commandMemoryIndex.current = -1;
+      if (!highlight.current) submit();
+    },
+    onBackspace: () => {
+      commandMemoryIndex.current = -1;
       backspace();
-    }
-  };
-
-  // -- Render loop update -------------------------------------------
-
-  const onUpdate = (delta: number) => {
-    blinkAccRef.current += delta;
-    while (blinkAccRef.current >= CURSOR_BLINK_INTERVAL) {
-      blinkAccRef.current -= CURSOR_BLINK_INTERVAL;
-      cursorVisible.current = !cursorVisible.current;
-    }
-
-    // Check for pending resize
-    const resize = pendingResizeRef.current;
-    pendingResizeRef.current = null;
-    const canvas = canvasRef.current;
-    const parent = canvas?.parentElement;
-    if (resize && canvas && parent) {
-      const newGrid = applyResize(canvas, parent, resize, cellSize);
-      if (newGrid) {
-        if (newGrid.cols !== gridSize.current.cols) removeHighlight();
-        gridSize.current = newGrid;
-        // Clamp scroll offset and re-scroll into cursor view for the new viewport
-        scrollOffset.current = calcScrollBy(
-          0,
-          0,
-          termBuffer.current.virtualBufferRanges.length,
-          gridSize.current.rows,
-          scrollOffset.current,
-        );
-        scrollIntoCursorView();
+    },
+    onArrowLeft: () => {
+      if (cursorInputCol.current > 0) cursorInputCol.current--;
+    },
+    onArrowRight: () => {
+      const editStart = getEditStart();
+      const lastRow = termBuffer.current.getLastRow();
+      if (editStart >= 0) {
+        const unlockedLength =
+          lastRow.length - lastRow.filter((c) => c.locked).length;
+        if (cursorInputCol.current < unlockedLength) cursorInputCol.current++;
       }
-    }
+    },
+  });
 
-    // Render
-    const ctx = canvas?.getContext('2d');
-    if (!ctx) return;
+  // -- Effect: keyboard ----------------------------------------------------
 
-    const virtualCursor = termBuffer.current.findVirtualCursor(
-      gridSize.current.cols,
-    );
-
-    if (
-      termBuffer.current.rowCount > 0 &&
-      !termBuffer.current.virtualBufferRanges.length
-    ) {
-      updateVR();
-    }
-
-    renderCanvas(
-      ctx,
-      termBuffer.current.buffer,
-      termBuffer.current.virtualBufferRanges,
-      scrollOffset.current,
-      gridSize.current,
-      cellSize,
-      virtualCursor,
-      cursorVisible.current,
-      highlight.current,
-    );
-
-    scrollbar.update(
-      termBuffer.current.virtualBufferRanges.length,
-      gridSize.current.rows,
-    );
-  };
-
-  // -- Init ---------------------------------------------------------
-
-  const doInit = async () => {
-    await pushInitData();
-    await newLinePrep();
-    await autoTypeAndSubmit('whoami');
-    scrollOffset.current = 0;
-  };
-
-  // -- Effects ------------------------------------------------------
-
-  // Keyboard listener
   React.useEffect(() => {
     const onKeyDown = async (e: KeyboardEvent) => {
       if (!init.current) return;
+      if (skipIfInputFocused(hiddenInputRef)) return;
 
       let actionTaken = false;
       if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
@@ -546,6 +437,20 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
         backspace();
         e.preventDefault();
         actionTaken = true;
+      } else if (e.key === 'ArrowLeft') {
+        if (cursorInputCol.current > 0) cursorInputCol.current--;
+        e.preventDefault();
+        actionTaken = true;
+      } else if (e.key === 'ArrowRight') {
+        const editStart = getEditStart();
+        const lastRow = termBuffer.current.getLastRow();
+        if (editStart >= 0) {
+          const unlockedLength =
+            lastRow.length - lastRow.filter((c) => c.locked).length;
+          if (cursorInputCol.current < unlockedLength) cursorInputCol.current++;
+        }
+        e.preventDefault();
+        actionTaken = true;
       } else if (e.key === 'ArrowUp') {
         await readCommandMemory(1);
       } else if (e.key === 'ArrowDown') {
@@ -555,82 +460,27 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
       blinkAccRef.current = 0;
       cursorVisible.current = true;
 
-      if (e.ctrlKey) {
-        if (e.key?.toLowerCase() === 'c') {
-          const text = getHighlightedText(
-            termBuffer.current.buffer,
-            termBuffer.current.virtualBufferRanges,
-            highlight.current,
-          );
-          navigator.clipboard.writeText(text);
-          removeHighlight();
-        }
+      if (e.ctrlKey && e.key?.toLowerCase() === 'c') {
+        const text = getHighlightedText(
+          termBuffer.current.buffer,
+          termBuffer.current.virtualBufferRanges,
+          highlight.current,
+        );
+        navigator.clipboard.writeText(text);
+        removeHighlight();
       } else {
         removeHighlight();
       }
 
-      if (actionTaken) {
-        updateVR();
-      }
+      if (actionTaken) updateVR();
     };
 
     window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-    };
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // Resize observer
-  React.useEffect(() => {
-    const parent = canvasRef.current?.parentElement;
-    if (!parent) return () => {};
+  // -- Effect: init --------------------------------------------------------
 
-    const parentObserver = new ResizeObserver(() => {
-      pendingResizeRef.current = {
-        w: parent.clientWidth,
-        h: parent.clientHeight,
-      };
-    });
-    parentObserver.observe(parent);
-
-    const canvasObserver = new ResizeObserver(() => {
-      updateVR();
-    });
-    if (canvasRef.current) {
-      canvasObserver.observe(canvasRef.current);
-    }
-
-    return () => {
-      parentObserver.disconnect();
-      canvasObserver.disconnect();
-    };
-  }, []);
-
-  // Render loop
-  React.useEffect(() => {
-    const loop = (time: number) => {
-      if (!lastTimeRef.current) lastTimeRef.current = time;
-
-      let delta = time - lastTimeRef.current;
-      lastTimeRef.current = time;
-      delta = Math.min(delta, MAX_DELTA);
-      accRef.current += delta;
-
-      while (accRef.current >= FRAME_TIME) {
-        accRef.current -= FRAME_TIME;
-        onUpdate(FRAME_TIME);
-      }
-
-      rafRef.current = requestAnimationFrame(loop);
-    };
-
-    rafRef.current = requestAnimationFrame(loop);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
-
-  // Init
   React.useEffect(() => {
     if (!init.current) {
       init.current = true;
@@ -638,7 +488,10 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
     }
   }, []);
 
-  // -- Render -------------------------------------------------------
+  // -- Render --------------------------------------------------------------
+
+  const lastTouchY = React.useRef(0);
+  const touchAccum = React.useRef(0);
 
   return (
     <TerminalPageStyle>
@@ -664,9 +517,9 @@ const TerminalPage = (props: NTerminalApp.IProps) => {
         autoComplete="off"
         autoCorrect="off"
         autoCapitalize="off"
-        onInput={onHiddenInput}
-        onKeyDown={onHiddenKeyDown}
-        onBlur={onHiddenInputBlur}
+        onInput={inputHandlers.onInput}
+        onKeyDown={inputHandlers.onKeyDown}
+        onBlur={inputHandlers.onBlur}
       />
       <ScrollbarTrack
         ref={scrollbar.trackRef}

@@ -30,3 +30,7 @@ Other apps will be added and they will either link to other places or work in th
 
 - Pipe output through head, tail, or grep to reduce result size. Avoid cat on large files — use Read with offset/limit instead.
 - Use offset and limit parameters to read only the sections you need. Avoid re-reading entire files when you only need a few lines.
+
+### Workflow
+
+When editing something or creatign something new, at the end of the task always first check for typescript errors, fix them if any and then once everything is okay, perform a eslint fix. Building the project is not necessary, dont do that.

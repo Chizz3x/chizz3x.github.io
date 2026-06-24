@@ -244,12 +244,22 @@ export class TerminalBuffer {
   /**
    * Map a real (bufferRow, bufferCol) position to its virtual
    * (screen-space) row/col given the current grid column count.
+   * When `bufferRow` / `bufferCol` are omitted, defaults to the end of
+   * the buffer (legacy behaviour).
    */
-  findVirtualCursor(cols: number): {
+  findVirtualCursor(
+    cols: number,
+    bufferRow?: number,
+    bufferCol?: number,
+  ): {
     virtualRow: number;
     virtualCol: number;
   } {
-    const { bufferRow, bufferCol } = this.getCursorPosition();
+    if (bufferRow === undefined || bufferCol === undefined) {
+      const pos = this.getCursorPosition();
+      bufferRow = pos.bufferRow;
+      bufferCol = pos.bufferCol;
+    }
 
     for (let i = 0; i < this.virtualBufferRanges.length; i++) {
       const [br, start, len] = this.virtualBufferRanges[i];

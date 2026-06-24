@@ -55,6 +55,48 @@ export class CommandHelp extends CommandBase {
               value: '> open <app-id> - Open an app by its ID',
             },
           ],
+          [
+            {
+              type: 'text',
+              value: '> date [time, now, dt] - Show current date and time',
+            },
+          ],
+          [
+            {
+              type: 'text',
+              value: '> echo <text> - Repeat text back to you',
+            },
+          ],
+          [
+            {
+              type: 'text',
+              value: '> calc [math, eval] <expr> - Evaluate a math expression',
+            },
+          ],
+          [
+            {
+              type: 'text',
+              value: '> cat <file> - Display the contents of a file',
+            },
+          ],
+          [
+            {
+              type: 'text',
+              value: '> fortune [quote, wisdom] - Random quote or wisdom',
+            },
+          ],
+          [
+            {
+              type: 'text',
+              value: "> sudo - Pretend to be a superuser (it won't work)",
+            },
+          ],
+          [
+            {
+              type: 'text',
+              value: '> ls - List directory contents',
+            },
+          ],
         ],
       };
     },
